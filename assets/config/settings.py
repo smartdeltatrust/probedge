@@ -17,6 +17,12 @@ class Settings:
     # Token de Finviz (defínelo en .env como FINVIZ_AUTH_TOKEN=...)
     FINVIZ_AUTH_TOKEN: str = os.getenv("FINVIZ_AUTH_TOKEN", "")
 
+    # Massive (ex-Polygon.io) API Key para opciones
+    MASSIVE_API_KEY: str = os.getenv("MASSIVE_API_KEY", "")
+
+    # FMP (Financial Modeling Prep) API Key para histórico OHLCV
+    FMP_API_KEY: str = os.getenv("FMP_API_KEY", "")
+
     # Parámetros por defecto
     DEFAULT_RANGE: str = "ytd"   # d1, d5, m1, m3, m6, ytd, y1, y2, y5, max
     DEFAULT_RATE: float = 0.04   # tasa libre de riesgo anual aprox.

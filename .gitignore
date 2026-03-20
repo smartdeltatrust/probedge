@@ -1,16 +1,5 @@
-# Entorno virtual
-venv/
-.env
-
-# Archivos de Python
+.venv/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-
-# Config local de Streamlit
-.streamlit/
-
-# Archivos de sistema
-.DS_Store
-Thumbs.db
+.env
+.streamlit/secrets.toml

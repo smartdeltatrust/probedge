@@ -61,6 +61,7 @@ def plot_main_figure(
     """
     Figura principal: OHLC + cono RND (68/95%) + mediana +
     opcionalmente heatmap y bandas RND históricas.
+    Bloomberg/tastytrade ultra-dark theme.
     """
 
     valuation_date = pd.Timestamp(valuation_date)
@@ -98,13 +99,11 @@ def plot_main_figure(
             y=y_vals,
             z=z_plot,
             colorscale=[
-                [0.0, "rgba(0,0,0,0.0)"],
-                [0.2, "#001f3f"],
-                [0.4, "#003f7f"],
-                [0.6, "#0074D9"],
-                [0.8, "#00E5FF"],
-                [0.9, "#FFFF00"],
-                [1.0, "#FFFF99"],
+                [0,   "#000000"],
+                [0.3, "#0a1628"],
+                [0.5, "#1e3a5f"],
+                [0.7, "#2196F3"],
+                [1.0, "#00e5ff"],
             ],
             zmin=0.0,
             zmax=zmax,
@@ -116,6 +115,8 @@ def plot_main_figure(
                 xanchor="left",
                 y=0.5,
                 len=0.8,
+                tickfont=dict(color="#888888"),
+                titlefont=dict(color="#aaaaaa"),
             ),
             showscale=True,
             name="Density",
@@ -135,12 +136,12 @@ def plot_main_figure(
             close=quotes_win["Close"],
             name="Underlying (OHLC)",
             increasing=dict(
-                line=dict(color="#00FF7F", width=1.4),
-                fillcolor="rgba(0,255,127,0.40)",
+                line=dict(color="#00d4aa", width=1.4),
+                fillcolor="rgba(0,212,170,0.40)",
             ),
             decreasing=dict(
-                line=dict(color="#FF4D4D", width=1.4),
-                fillcolor="rgba(255,77,77,0.40)",
+                line=dict(color="#ff3366", width=1.4),
+                fillcolor="rgba(255,51,102,0.40)",
             ),
             showlegend=True,
         )
@@ -163,7 +164,7 @@ def plot_main_figure(
                 x=x_future,
                 y=q2p5_f,
                 mode="lines",
-                line=dict(color="rgba(0,90,255,0.9)", width=1),
+                line=dict(color="#1e50b4", width=1),
                 showlegend=False,
                 hovertemplate="RND 95% low: %{y:.2f}<extra></extra>",
             )
@@ -172,9 +173,9 @@ def plot_main_figure(
                 x=x_future,
                 y=q97p5_f,
                 mode="lines",
-                line=dict(color="rgba(0,90,255,0.9)", width=1),
+                line=dict(color="#1e50b4", width=1),
                 fill="tonexty",
-                fillcolor="rgba(0,90,255,0.18)",
+                fillcolor="rgba(30, 80, 180, 0.15)",
                 name="RND 95%",
                 hovertemplate="RND 95% high: %{y:.2f}<extra></extra>",
             )
@@ -184,7 +185,7 @@ def plot_main_figure(
                 x=x_future,
                 y=q16_f,
                 mode="lines",
-                line=dict(color="rgba(0,191,255,0.9)", width=1),
+                line=dict(color="#00b4dc", width=1),
                 showlegend=False,
                 hovertemplate="RND 68% low: %{y:.2f}<extra></extra>",
             )
@@ -193,9 +194,9 @@ def plot_main_figure(
                 x=x_future,
                 y=q84_f,
                 mode="lines",
-                line=dict(color="rgba(0,191,255,0.9)", width=1),
+                line=dict(color="#00b4dc", width=1),
                 fill="tonexty",
-                fillcolor="rgba(0,191,255,0.25)",
+                fillcolor="rgba(0, 180, 220, 0.25)",
                 name="RND 68%",
                 hovertemplate="RND 68% high: %{y:.2f}<extra></extra>",
             )
@@ -211,7 +212,8 @@ def plot_main_figure(
                 x=x_vals,
                 y=q50,
                 mode="lines",
-                line=dict(color="rgba(255,255,255,0.4)", width=1.4),
+                line=dict(color="#ffffff", width=1.4),
+                opacity=0.5,
                 name="RND Median",
                 hovertemplate="RND Median: %{y:.2f}<extra></extra>",
             )
@@ -248,9 +250,9 @@ def plot_main_figure(
             xref="x",
             yref="y",
             line=dict(
-                color="#FFFF00",
+                color="#ffd700",
                 width=1,
-                dash="dash",
+                dash="dot",
             ),
         )
 
@@ -261,11 +263,11 @@ def plot_main_figure(
             showarrow=False,
             xanchor="left",
             yanchor="bottom",
-            font=dict(color="#FFFF00", size=10),
+            font=dict(color="#ffd700", size=10),
         )
 
     # -------------------------------------------------
-    # 5) Estética general
+    # 5) Estética general — Bloomberg/tastytrade ultra dark
     # -------------------------------------------------
     fig.update_layout(
         template=None,
@@ -275,9 +277,14 @@ def plot_main_figure(
         yaxis_title="Price / Strike",
         title="Densidad de Probabilidad Implícita a Partir de Precios de Opciones",
         hovermode="x unified",
+        hoverlabel=dict(
+            bgcolor="#1a1a1a",
+            font=dict(color="#ffffff", family="Consolas, monospace"),
+            bordercolor="#333333",
+        ),
         font=dict(
-            family="Roboto Mono, monospace",
-            color="#E0E0E0",
+            family="Consolas, monospace",
+            color="#aaaaaa",
         ),
         legend=dict(
             orientation="h",
@@ -286,23 +293,27 @@ def plot_main_figure(
             xanchor="center",
             x=0.5,
             bgcolor="rgba(0,0,0,0.7)",
-            bordercolor="#444444",
+            bordercolor="#333333",
             borderwidth=1,
+            font=dict(color="#aaaaaa"),
         ),
-        margin=dict(l=60, r=90, t=60, b=90),
+        margin=dict(l=60, r=20, t=40, b=40),
     )
-
 
     fig.update_xaxes(
         showgrid=True,
-        gridcolor="#333333",
+        gridcolor="#1a1a1a",
+        zerolinecolor="#1a1a1a",
         rangeslider_visible=False,
+        tickfont=dict(color="#888888"),
+        title_font=dict(color="#aaaaaa"),
     )
     fig.update_yaxes(
         showgrid=True,
-        gridcolor="#333333",
+        gridcolor="#1a1a1a",
+        zerolinecolor="#1a1a1a",
+        tickfont=dict(color="#888888"),
+        title_font=dict(color="#aaaaaa"),
     )
 
-    st.plotly_chart(fig, use_container_width=True)
-
-
+    st.plotly_chart(fig, width="stretch")

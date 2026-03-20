@@ -12,12 +12,11 @@ import os
 
 
 from assets.config.settings import settings
-from modules.data_loader import (
-	fetch_quote_history,
-	fetch_options_chain,
-	clean_options_chain,
-	fetch_available_expiries,   # <-- NUEVO
+from modules.data_provider.massive import (
+	fetch_available_expiries as massive_expiries,
+	fetch_options_snapshot,
 )
+from modules.data_provider.fmp import fetch_quote_history as fmp_quote_history
 from modules.utils import (
 	compute_rnd_from_calls,
 	compute_rnd_from_clean_calls,
@@ -66,20 +65,46 @@ STRIPE_PAYMENT_LINK = "https://buy.stripe.com/eVq3cx1Isbd74qLd6BcfK01"
 
 # --------- CACHES ---------
 @st.cache_data
-def cached_quotes(ticker: str, range_code: str, auth_token: str):
-	return fetch_quote_history(ticker, range_code, auth_token)
+def cached_quotes(ticker: str, range_code: str, fmp_api_key: str):
+	"""Descarga histórico OHLCV via FMP. Convierte range_code a días aproximados."""
+	range_to_days = {
+		"d1": 1, "d5": 5, "m1": 21, "m3": 63, "m6": 126,
+		"ytd": 252, "y1": 252, "y2": 504, "y5": 1260, "max": 0,
+	}
+	days = range_to_days.get(range_code, 252)
+	return fmp_quote_history(ticker, fmp_api_key, days=days)
 
 
 @st.cache_data
-def cached_expiries(ticker: str, auth_token: str):
-	"""Lista de vencimientos disponibles en Finviz para ese ticker."""
-	return fetch_available_expiries(ticker, auth_token)
+def cached_expiries(ticker: str, massive_api_key: str):
+	"""Lista de vencimientos disponibles via Massive para ese ticker."""
+	return massive_expiries(ticker, massive_api_key)
 
 
 @st.cache_data
-def cached_options(ticker: str, expiry: str, auth_token: str):
-	raw = fetch_options_chain(ticker, expiry, auth_token)
-	return clean_options_chain(raw)
+def cached_options(ticker: str, expiry: str, massive_api_key: str):
+	"""Descarga snapshot de opciones via Massive y normaliza columnas."""
+	import numpy as np
+	df = fetch_options_snapshot(ticker, expiry, massive_api_key)
+	if df.empty:
+		return df
+	# Renombrar contract_type → option_type y last_price → last_close
+	df = df.rename(columns={
+		"contract_type": "option_type",
+		"last_price": "last_close",
+	})
+	# Calcular mid_price y price (lo que espera build_clean_calls_from_chain)
+	bid = df["bid"].astype(float)
+	ask = df["ask"].astype(float)
+	last = df["last_close"].astype(float) if "last_close" in df.columns else pd.Series(np.nan, index=df.index)
+	mid = np.where(
+		(bid > 0) & (ask > 0),
+		0.5 * (bid + ask),
+		np.where(bid > 0, bid, np.where(ask > 0, ask, np.where(last > 0, last, np.nan))),
+	)
+	df["mid_price"] = mid
+	df["price"] = df["mid_price"]
+	return df.reset_index(drop=True)
 
 
 IS_DEV = os.getenv("APP_ENV", "dev").lower() == "dev"
@@ -133,13 +158,20 @@ def main():
     controls_container = st.container()       # 3) controles
 
     # -------------------------------------------------
-    # Token Finviz (solo desde settings / .env, SIN mostrar en UI)
+    # API Keys (solo desde settings / .env, SIN mostrar en UI)
     # -------------------------------------------------
-    auth_token = settings.FINVIZ_AUTH_TOKEN
-    if not auth_token:
+    fmp_api_key = settings.FMP_API_KEY
+    massive_api_key = settings.MASSIVE_API_KEY
+    if not fmp_api_key:
         st.error(
-            "Finviz token is not configured.\n\n"
-            "Set FINVIZ_AUTH_TOKEN in your .env or in assets/config/settings.py."
+            "FMP API key is not configured.\n\n"
+            "Set FMP_API_KEY in your .env or in assets/config/settings.py."
+        )
+        st.stop()
+    if not massive_api_key:
+        st.error(
+            "Massive API key is not configured.\n\n"
+            "Set MASSIVE_API_KEY in your .env or in assets/config/settings.py."
         )
         st.stop()
 
@@ -162,11 +194,11 @@ def main():
 
         # --- Columna derecha: vencimiento, ventanas y tasas ---
         with col2:
-            # Vencimientos desde yfinance
+            # Vencimientos desde Massive
             available_expiries: list[str] = []
             if ticker:
                 try:
-                    available_expiries = fetch_available_expiries(ticker)
+                    available_expiries = cached_expiries(ticker, massive_api_key)
                 except RuntimeError as e:
                     st.warning(str(e))
                     available_expiries = []
@@ -180,27 +212,30 @@ def main():
                     except Exception:
                         expiry_dates.append(None)
 
-                # Vencimiento más cercano dentro de los próximos 30 días
+                # Vencimiento ideal: entre 21 y 60 días en el futuro
+                # Preferencia: el más cercano a 30 días
                 best_idx = None
-                best_days = None
+                best_distance = None
                 for idx, dt in enumerate(expiry_dates):
                     if dt is None:
                         continue
                     days = (dt - today).days
-                    if days < 0:
-                        continue  # ya vencido
-                    if days <= 30:
-                        if (best_days is None) or (days < best_days):
-                            best_days = days
-                            best_idx = idx
+                    if days < 21:
+                        continue  # muy cercano o ya vencido
+                    if days > 60:
+                        continue  # demasiado lejano
+                    distance = abs(days - 30)  # preferir ~30 días
+                    if (best_distance is None) or (distance < best_distance):
+                        best_distance = distance
+                        best_idx = idx
 
-                # Si no hay ninguno en <= 30 días, usamos el futuro más cercano
+                # Si no hay ninguno en 21-60 días, buscar el futuro más cercano a 30 días
                 if best_idx is None:
                     for idx, dt in enumerate(expiry_dates):
                         if dt is None:
                             continue
                         days = (dt - today).days
-                        if days >= 0:
+                        if days >= 7:
                             best_idx = idx
                             break
 
@@ -212,7 +247,7 @@ def main():
                     "Expiry",
                     options=available_expiries,
                     index=best_idx,
-                    help="Expiries available from yfinance",
+                    help="Default: nearest expiry between 21-60 days out",
                 )
             else:
                 expiry_str = st.text_input(
@@ -228,11 +263,17 @@ def main():
                     "Historical window (days)",
                     min_value=30,
                     max_value=2000,
-                    value=252,
+                    value=120,  # ~4 meses de histórico
                     step=10,
                 )
             with col_fut_win:
-                future_days = 120  # fijo por diseño
+                future_days = st.slider(
+                    "Forward window (days)",
+                    min_value=7,
+                    max_value=730,
+                    value=60,  # ~2 meses de cono hacia adelante
+                    step=7,
+                )
 
             # Tasas
             r_rate = st.number_input(
@@ -256,9 +297,9 @@ def main():
     # 1) Datos históricos (quotes)
     # -------------------------------------------------
     try:
-        quotes_df = cached_quotes(ticker, range_code, auth_token)
+        quotes_df = cached_quotes(ticker, range_code, fmp_api_key)
     except RuntimeError as e:
-        st.error(f"Could not download historical data from Finviz: {e}")
+        st.error(f"Could not download historical data from FMP: {e}")
         st.stop()
     except Exception as e:
         st.error(f"Unexpected error while downloading historical data: {e}")
@@ -286,9 +327,9 @@ def main():
     # 3) Cadena de opciones desde Finviz
     # -------------------------------------------------
     try:
-        options_df = cached_options(ticker, expiry_str, auth_token)
+        options_df = cached_options(ticker, expiry_str, massive_api_key)
     except RuntimeError as e:
-        st.error(f"Could not download options chain from Finviz: {e}")
+        st.error(f"Could not download options chain from Massive: {e}")
         st.stop()
     except Exception as e:
         st.error(f"Unexpected error while downloading options: {e}")
