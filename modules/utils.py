@@ -148,7 +148,7 @@ def build_time_price_density(
             sigma = max(close * hist_sigma_rel, 1e-3)
             pdf = gaussian_density(price_grid, close, sigma)
             pdf = np.clip(pdf, 0, None)
-            area = np.trapz(pdf, price_grid)
+            area = np.trapezoid(pdf, price_grid)
             if area > 0:
                 pdf /= area
             density[:, j] = pdf
@@ -165,7 +165,7 @@ def build_time_price_density(
         d_exp = pd.Timestamp(d_exp)
         pdf_interp = np.interp(price_grid, K_grid, pdf_K, left=0.0, right=0.0)
         pdf_interp = np.clip(pdf_interp, 0, None)
-        area = np.trapz(pdf_interp, price_grid)
+        area = np.trapezoid(pdf_interp, price_grid)
         if area > 0:
             pdf_interp /= area
         expiry_pdfs[d_exp] = pdf_interp
@@ -179,7 +179,7 @@ def build_time_price_density(
 
     base_pdf_last = gaussian_density(price_grid, S_last, sigma_last)
     base_pdf_last = np.clip(base_pdf_last, 0, None)
-    area_base = np.trapz(base_pdf_last, price_grid)
+    area_base = np.trapezoid(base_pdf_last, price_grid)
     if area_base > 0:
         base_pdf_last /= area_base
 
@@ -205,7 +205,7 @@ def build_time_price_density(
             pdf_mix = (1.0 - w) * base_pdf_last + w * pdf_expiry
 
             pdf_mix = np.clip(pdf_mix, 0, None)
-            area_mix = np.trapz(pdf_mix, price_grid)
+            area_mix = np.trapezoid(pdf_mix, price_grid)
             if area_mix > 0:
                 pdf_mix /= area_mix
 
@@ -234,7 +234,7 @@ def build_time_price_density(
                     pdf_right = expiry_pdfs[T_right]
                     pdf_interp_time = (1 - w) * pdf_left + w * pdf_right
                     pdf_interp_time = np.clip(pdf_interp_time, 0, None)
-                    area2 = np.trapz(pdf_interp_time, price_grid)
+                    area2 = np.trapezoid(pdf_interp_time, price_grid)
                     if area2 > 0:
                         pdf_interp_time /= area2
                     density[:, j] = pdf_interp_time
@@ -466,7 +466,7 @@ def compute_rnd_from_calls(
     pdf = np.maximum(d2, 0.0)
 
     # Normalización
-    integral = np.trapz(pdf, K_grid)
+    integral = np.trapezoid(pdf, K_grid)
     if not np.isfinite(integral) or integral <= 0:
         raise ValueError("La densidad obtenida es degenerada (integral <= 0).")
 
@@ -474,7 +474,7 @@ def compute_rnd_from_calls(
 
     # --- Ajuste al forward teórico ---
     F_theo = spot * np.exp((r_annual - q_annual) * T)
-    m_rnd = np.trapz(K_grid * pdf, K_grid)
+    m_rnd = np.trapezoid(K_grid * pdf, K_grid)
 
     if m_rnd > 0 and np.isfinite(m_rnd):
         scale = F_theo / m_rnd
@@ -485,7 +485,7 @@ def compute_rnd_from_calls(
         pdf_scaled = pdf / scale  # cambio de variable Y = aX
 
         # Renormalizamos por si acaso
-        integral2 = np.trapz(pdf_scaled, K_scaled)
+        integral2 = np.trapezoid(pdf_scaled, K_scaled)
         if integral2 > 0:
             pdf_scaled /= integral2
         else:
@@ -558,14 +558,14 @@ def compute_rnd_from_clean_calls(
     pdf = np.maximum(d2, 0.0)
 
     # Normalización
-    integral = np.trapz(pdf, K_grid)
+    integral = np.trapezoid(pdf, K_grid)
     if not np.isfinite(integral) or integral <= 0:
         raise ValueError("La densidad obtenida es degenerada (integral <= 0).")
     pdf /= integral
 
     # Ajuste al forward teórico
     F_theo = spot * np.exp((r_annual - q_annual) * T)
-    m_rnd = np.trapz(K_grid * pdf, K_grid)
+    m_rnd = np.trapezoid(K_grid * pdf, K_grid)
 
     if m_rnd > 0 and np.isfinite(m_rnd):
         scale = F_theo / m_rnd
@@ -574,7 +574,7 @@ def compute_rnd_from_clean_calls(
         K_scaled = K_grid * scale
         pdf_scaled = pdf / scale  # cambio de variable Y = aX
 
-        integral2 = np.trapz(pdf_scaled, K_scaled)
+        integral2 = np.trapezoid(pdf_scaled, K_scaled)
         if integral2 > 0:
             pdf_scaled /= integral2
         else:
