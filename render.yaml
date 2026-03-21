@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: rnd-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MASSIVE_API_KEY
+        sync: false
+      - key: FMP_API_KEY
+        sync: false
+      - key: FINVIZ_AUTH_TOKEN
+        sync: false
+    healthCheckPath: /health
