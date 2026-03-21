@@ -1,0 +1,14 @@
+[Unit]
+Description=RND FastAPI - Risk Neutral Density API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/leo/projects/Risk-Neutral-Density-Probabilities
+ExecStart=/home/leo/projects/Risk-Neutral-Density-Probabilities/.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=/home/leo/projects/Risk-Neutral-Density-Probabilities/.env
+
+[Install]
+WantedBy=default.target
