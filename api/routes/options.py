@@ -157,3 +157,74 @@ async def get_rnd(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error inesperado: {e}")
+
+
+@router.get("/{ticker}/probabilities")
+async def get_probabilities(
+    ticker: str,
+    expiration: Optional[str] = Query(None),
+    price_target: float = Query(..., description="Precio objetivo para calcular P(S_T > target) y P(S_T < target)"),
+    r_annual: float = Query(0.045),
+    q_annual: float = Query(0.0),
+    oi_min: int = Query(50),
+):
+    """
+    Calcula probabilidades risk-neutral: P(S_T > target) y P(S_T < target)
+    a partir de la RND de Breeden-Litzenberger.
+    """
+    settings = get_settings()
+    try:
+        if not expiration:
+            expiries = fetch_available_expiries(ticker.upper(), settings.massive_api_key)
+            if not expiries:
+                raise HTTPException(status_code=404, detail=f"No hay vencimientos para {ticker}")
+            expiration = expiries[0]
+
+        spot = get_spot_price(ticker.upper(), settings.fmp_api_key)
+        df = fetch_options_snapshot(ticker.upper(), expiration, settings.massive_api_key)
+        if df.empty:
+            raise HTTPException(status_code=404, detail=f"Sin datos para {ticker} exp {expiration}")
+
+        valuation_date = pd.Timestamp.today().normalize()
+        expiry_date = pd.Timestamp(expiration)
+        tau_days = (expiry_date - valuation_date).days
+
+        if tau_days <= 0:
+            raise HTTPException(status_code=422, detail=f"Vencimiento {expiration} ya pasó.")
+
+        price_grid, rnd_values = compute_rnd_from_calls(
+            options_df=df.rename(columns={"contract_type": "option_type", "last_price": "last_close"}),
+            spot=spot,
+            valuation_date=valuation_date,
+            expiry_date=expiry_date,
+            r_annual=r_annual,
+            q_annual=q_annual,
+            oi_min=oi_min,
+        )
+
+        pg = np.array(price_grid)
+        rnd = np.array(rnd_values)
+
+        # Probabilidades via integración numérica
+        mask_above = pg >= price_target
+        mask_below = pg < price_target
+
+        p_above = float(np.trapezoid(rnd[mask_above], pg[mask_above])) if mask_above.any() else 0.0
+        p_below = float(np.trapezoid(rnd[mask_below], pg[mask_below])) if mask_below.any() else 0.0
+
+        return {
+            "ticker": ticker.upper(),
+            "expiration": expiration,
+            "spot": spot,
+            "price_target": price_target,
+            "tau_days": tau_days,
+            "p_above": round(p_above, 6),
+            "p_below": round(p_below, 6),
+            "p_above_pct": round(p_above * 100, 2),
+            "p_below_pct": round(p_below * 100, 2),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
