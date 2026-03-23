@@ -29,3 +29,16 @@ pydantic-settings>=2.0
 
 # Utils
 pyarrow>=14.0
+
+# Auth & persistence
+SQLAlchemy>=2.0
+aiosqlite>=0.19
+passlib[bcrypt]>=1.7
+python-jose[cryptography]>=3.3
+
+# Payments & rate limiting
+stripe>=8.0
+limits>=3.10
+# Validation
+email-validator>=2.1
+

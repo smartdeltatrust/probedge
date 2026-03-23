@@ -2,14 +2,22 @@
 api/routes/market.py
 Endpoints de datos de mercado — FMP API.
 """
-from fastapi import APIRouter, HTTPException, Query
-import requests
-import sys, os, math
+from __future__ import annotations
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+import math
+import os
+import sys
+
+import requests
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from modules.data_provider.fmp import fetch_quote_history
+from api.auth.dependencies import get_current_user
+from api.auth.models import User
 from api.core.config import get_settings
+from api.core.rate_limit import rate_limit_dependency
 
 router = APIRouter(prefix="/market", tags=["market"])
 
@@ -26,9 +34,11 @@ def safe_float(v):
         return None
 
 
-@router.get("/{ticker}/quote")
-async def get_quote(ticker: str):
-    """Precio spot actual + info básica del instrumento."""
+@router.get("/{ticker}/quote", dependencies=[Depends(rate_limit_dependency)])
+async def get_quote(
+    ticker: str,
+    current_user: User = Depends(get_current_user),
+):
     settings = get_settings()
     try:
         resp = requests.get(
@@ -58,16 +68,16 @@ async def get_quote(ticker: str):
         }
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Error FMP: {e}")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Error FMP: {exc}") from exc
 
 
-@router.get("/{ticker}/history")
+@router.get("/{ticker}/history", dependencies=[Depends(rate_limit_dependency)])
 async def get_history(
     ticker: str,
-    days: int = Query(30, description="Días de historia a retornar (default 30, max 252).")
+    days: int = Query(30, description="Días de historia a retornar (default 30, max 252)."),
+    current_user: User = Depends(get_current_user),
 ):
-    """Historial OHLCV del ticker."""
     settings = get_settings()
     days = min(days, 252)
     try:
@@ -75,7 +85,6 @@ async def get_history(
         if df.empty:
             raise HTTPException(status_code=404, detail=f"Sin historial para {ticker}")
         records = df.tail(days).to_dict(orient="records")
-        # Serializar fechas a string
         for r in records:
             if hasattr(r.get("Date"), "isoformat"):
                 r["Date"] = r["Date"].isoformat()
@@ -86,5 +95,5 @@ async def get_history(
         }
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Error FMP: {e}")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Error FMP: {exc}") from exc
