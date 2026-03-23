@@ -11,4 +11,27 @@ services:
         sync: false
       - key: FINVIZ_AUTH_TOKEN
         sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
     healthCheckPath: /health
+
+  - type: web
+    name: rnd-streamlit
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: MASSIVE_API_KEY
+        sync: false
+      - key: FMP_API_KEY
+        sync: false
+      - key: FINVIZ_AUTH_TOKEN
+        sync: false
+      - key: APP_ENV
+        value: production
