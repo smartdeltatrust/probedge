@@ -12,10 +12,13 @@ import os
 
 
 from assets.config.settings import settings
-from modules.data_provider.massive import (
-	fetch_available_expiries as massive_expiries,
+from modules.data_provider.tastytrade_options import (
+	fetch_available_expiries,
 	fetch_options_snapshot,
+	get_spot_price as tt_spot_price,
+	_get_tt_token,
 )
+from modules.data_provider.dxfeed_quotes import get_quotes_from_env
 from modules.data_provider.fmp import fetch_quote_history as fmp_quote_history
 from modules.utils import (
 	compute_rnd_from_calls,
@@ -41,9 +44,7 @@ st.set_page_config(
 APP_ENV = os.getenv("APP_ENV", "").strip().lower()
 IS_DEV = APP_ENV in ("", "dev", "development")
 
-# DEBUG solo en desarrollo
-if IS_DEV:
-    st.write(f"DEBUG APP_ENV='{APP_ENV}', IS_DEV={IS_DEV}")
+
 
 
 # --- Simple stub for "Pro" access validation ---
@@ -75,17 +76,19 @@ def cached_quotes(ticker: str, range_code: str, fmp_api_key: str):
 	return fmp_quote_history(ticker, fmp_api_key, days=days)
 
 
-@st.cache_data
-def cached_expiries(ticker: str, massive_api_key: str):
-	"""Lista de vencimientos disponibles via Massive para ese ticker."""
-	return massive_expiries(ticker, massive_api_key)
+@st.cache_data(ttl=300)
+def cached_expiries(ticker: str):
+	"""Lista de vencimientos disponibles via tastytrade para ese ticker."""
+	tt_token = _get_tt_token()
+	return fetch_available_expiries(ticker, tt_token)
 
 
-@st.cache_data
-def cached_options(ticker: str, expiry: str, massive_api_key: str):
-	"""Descarga snapshot de opciones via Massive y normaliza columnas."""
+@st.cache_data(ttl=60)
+def cached_options(ticker: str, expiry: str):
+	"""Descarga snapshot de opciones via tastytrade/dxFeed y normaliza columnas."""
 	import numpy as np
-	df = fetch_options_snapshot(ticker, expiry, massive_api_key)
+	tt_token = _get_tt_token()
+	df = fetch_options_snapshot(ticker, expiry, tt_token)
 	if df.empty:
 		return df
 	# Renombrar contract_type → option_type y last_price → last_close
@@ -161,17 +164,19 @@ def main():
     # API Keys (solo desde settings / .env, SIN mostrar en UI)
     # -------------------------------------------------
     fmp_api_key = settings.FMP_API_KEY
-    massive_api_key = settings.MASSIVE_API_KEY
     if not fmp_api_key:
         st.error(
             "FMP API key is not configured.\n\n"
             "Set FMP_API_KEY in your .env or in assets/config/settings.py."
         )
         st.stop()
-    if not massive_api_key:
+    try:
+        _get_tt_token()
+    except Exception:
         st.error(
-            "Massive API key is not configured.\n\n"
-            "Set MASSIVE_API_KEY in your .env or in assets/config/settings.py."
+            "Tastytrade token not available. "
+            "Check /tmp/tt_token.txt or .env credentials "
+            "(TASTYTRADE_LOGIN / TASTYTRADE_REMEMBER_TOKEN)."
         )
         st.stop()
 
@@ -194,11 +199,11 @@ def main():
 
         # --- Columna derecha: vencimiento, ventanas y tasas ---
         with col2:
-            # Vencimientos desde Massive
+            # Vencimientos desde tastytrade
             available_expiries: list[str] = []
             if ticker:
                 try:
-                    available_expiries = cached_expiries(ticker, massive_api_key)
+                    available_expiries = cached_expiries(ticker)
                 except RuntimeError as e:
                     st.warning(str(e))
                     available_expiries = []
@@ -293,6 +298,9 @@ def main():
     # Parámetro de anchura histórica (fijo)
     hist_sigma_rel = float(settings.HIST_SIGMA_REL)
 
+    # Fuente de datos (discreta, al pie de controles)
+    st.caption("Data: tastytrade (options · real-time) · FMP (historical OHLCV)")
+
     # -------------------------------------------------
     # 1) Datos históricos (quotes)
     # -------------------------------------------------
@@ -310,9 +318,19 @@ def main():
         st.stop()
 
     valuation_date = quotes_df["Date"].max()
-    spot = float(
-        quotes_df.loc[quotes_df["Date"] == valuation_date, "Close"].iloc[0]
-    )
+    # Intentar spot en tiempo real vía dxFeed; fallback al último close de FMP
+    try:
+        spot_q = get_quotes_from_env([ticker])
+        if spot_q.get(ticker, {}).get("price"):
+            spot = float(spot_q[ticker]["price"])
+        else:
+            spot = float(
+                quotes_df.loc[quotes_df["Date"] == valuation_date, "Close"].iloc[0]
+            )
+    except Exception:
+        spot = float(
+            quotes_df.loc[quotes_df["Date"] == valuation_date, "Close"].iloc[0]
+        )
 
     # -------------------------------------------------
     # 2) Vencimiento
@@ -324,19 +342,23 @@ def main():
         st.stop()
 
     # -------------------------------------------------
-    # 3) Cadena de opciones desde Finviz
+    # 3) Cadena de opciones desde tastytrade/dxFeed
     # -------------------------------------------------
     try:
-        options_df = cached_options(ticker, expiry_str, massive_api_key)
+        options_df = cached_options(ticker, expiry_str)
     except RuntimeError as e:
-        st.error(f"Could not download options chain from Massive: {e}")
+        st.error(f"Could not download options chain from tastytrade: {e}")
         st.stop()
     except Exception as e:
         st.error(f"Unexpected error while downloading options: {e}")
         st.stop()
 
-    if options_df.empty:
-        st.error("No options found for that expiry.")
+    if options_df is None or options_df.empty:
+        st.warning(
+            f"No options data found for **{ticker}** expiry **{expiry_str}**. "
+            "This may happen outside market hours or for illiquid contracts. "
+            "Try a different expiry or ticker."
+        )
         st.stop()
 
     # -------------------------------------------------
