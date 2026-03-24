@@ -345,55 +345,13 @@ def get_quotes_from_env(
     timeout: float = TIMEOUT_DATA,
 ) -> dict[str, dict]:
     """
-    Conveniencia: obtiene token de tastytrade y retorna quotes.
-    Orden de prioridad:
-    1. /tmp/tt_token.txt (cache)
-    2. Variables de entorno del sistema (Render, Docker, etc.)
-    3. Archivo .env del proyecto
+    Conveniencia: obtiene token de tastytrade (con auto-renovación) y retorna quotes.
+    Reutiliza _get_tt_token() de tastytrade_options para lógica unificada.
     """
-    import os
-
-    # 1. Cache
-    token_file = Path("/tmp/tt_token.txt")
-    if token_file.exists():
-        tt_token = token_file.read_text().strip()
-        if tt_token:
-            return get_quotes(symbols, tt_token, timeout)
-
-    # 2. Variables de entorno del sistema
-    remember = os.environ.get("TASTYTRADE_REMEMBER_TOKEN", "")
-    login    = os.environ.get("TASTYTRADE_LOGIN", "")
-
-    # 3. Archivo .env como fallback
-    if not remember or not login:
-        if env_path is None:
-            env_path = str(Path.home() / "projects/Risk-Neutral-Density-Probabilities/.env")
-        if Path(env_path).exists():
-            env: dict[str, str] = {}
-            with open(env_path) as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, _, v = line.partition("=")
-                        env[k.strip()] = v.strip()
-            remember = env.get("TASTYTRADE_REMEMBER_TOKEN", remember)
-            login    = env.get("TASTYTRADE_LOGIN", login)
-
-    if not remember or not login:
-        raise RuntimeError("No hay credenciales de tastytrade. Configura TASTYTRADE_LOGIN y TASTYTRADE_REMEMBER_TOKEN.")
-
-    payload = json.dumps({"login": login, "remember-token": remember}).encode()
-    req = urllib.request.Request(
-        "https://api.tastytrade.com/sessions",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=10) as r:
-        data = json.loads(r.read())
-    tt_token = data["data"]["session-token"]
-    token_file.write_text(tt_token)
-
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from modules.data_provider.tastytrade_options import _get_tt_token
+    tt_token = _get_tt_token(env_path)
     return get_quotes(symbols, tt_token, timeout)
 
 

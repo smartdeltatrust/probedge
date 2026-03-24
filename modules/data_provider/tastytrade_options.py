@@ -34,29 +34,16 @@ TIMEOUT_DATA = 30  # Segundos — más amplio porque hay muchos símbolos
 
 # ── Token helper ──────────────────────────────────────────────────────────────
 
-def _get_tt_token(env_path: Optional[str] = None) -> str:
-    """
-    Obtiene session token de tastytrade. Orden de prioridad:
-    1. /tmp/tt_token.txt (cache local)
-    2. Variables de entorno del sistema (TASTYTRADE_LOGIN + TASTYTRADE_REMEMBER_TOKEN)
-    3. Archivo .env del proyecto
-    """
+def _load_credentials(env_path: Optional[str] = None) -> dict:
+    """Carga credenciales desde os.environ primero, luego archivo .env."""
     import os
-
-    # 1. Cache local
-    token_file = Path("/tmp/tt_token.txt")
-    if token_file.exists():
-        tt_token = token_file.read_text().strip()
-        if tt_token:
-            return tt_token
-
-    # 2. Variables de entorno del sistema (Render, Docker, etc.)
-    env: dict[str, str] = {}
-    remember = os.environ.get("TASTYTRADE_REMEMBER_TOKEN", "")
-    login    = os.environ.get("TASTYTRADE_LOGIN", "")
-
-    # 3. Archivo .env como fallback
-    if not remember or not login:
+    creds = {
+        "login":          os.environ.get("TASTYTRADE_LOGIN", ""),
+        "password":       os.environ.get("TASTYTRADE_PASSWORD", ""),
+        "remember_token": os.environ.get("TASTYTRADE_REMEMBER_TOKEN", ""),
+    }
+    # Completar con .env si faltan valores
+    if not all(creds.values()):
         if env_path is None:
             env_path = str(Path.home() / "projects/Risk-Neutral-Density-Probabilities/.env")
         if Path(env_path).exists():
@@ -65,26 +52,125 @@ def _get_tt_token(env_path: Optional[str] = None) -> str:
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:
                         k, _, v = line.partition("=")
-                        env[k.strip()] = v.strip()
-            remember = env.get("TASTYTRADE_REMEMBER_TOKEN", remember)
-            login    = env.get("TASTYTRADE_LOGIN", login)
+                        k, v = k.strip(), v.strip()
+                        if k == "TASTYTRADE_LOGIN"          and not creds["login"]:
+                            creds["login"] = v
+                        elif k == "TASTYTRADE_PASSWORD"     and not creds["password"]:
+                            creds["password"] = v
+                        elif k == "TASTYTRADE_REMEMBER_TOKEN" and not creds["remember_token"]:
+                            creds["remember_token"] = v
+    return creds
 
-    if not remember or not login:
-        raise RuntimeError("No hay credenciales de tastytrade. Configura TASTYTRADE_LOGIN y TASTYTRADE_REMEMBER_TOKEN.")
 
-    payload = json.dumps({"login": login, "remember-token": remember}).encode()
+def _session_valid(token: str) -> bool:
+    """Verifica que el session token sigue activo."""
     req = urllib.request.Request(
-        f"{_TT_API}/sessions",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
+        f"{_TT_API}/customers/me",
+        headers={"Authorization": token}
     )
-    with urllib.request.urlopen(req, timeout=10) as r:
-        data = json.loads(r.read())
-    tt_token = data["data"]["session-token"]
-    token_file.write_text(tt_token)
-    logger.info("Token re-autenticado y guardado en /tmp/tt_token.txt")
-    return tt_token
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def _auth_with_remember(login: str, remember: str) -> Optional[dict]:
+    """Intenta autenticar con remember token. Retorna data dict o None."""
+    payload = json.dumps({"login": login, "remember-token": remember, "remember-me": True}).encode()
+    req = urllib.request.Request(
+        f"{_TT_API}/sessions", data=payload,
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read()).get("data", {})
+    except Exception:
+        return None
+
+
+def _auth_with_password(login: str, password: str) -> Optional[dict]:
+    """Intenta autenticar con password (sin OTP — funciona desde IPs conocidas)."""
+    payload = json.dumps({"login": login, "password": password, "remember-me": True}).encode()
+    req = urllib.request.Request(
+        f"{_TT_API}/sessions", data=payload,
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read()).get("data", {})
+    except Exception:
+        return None
+
+
+def _save_session(token_file: Path, session_token: str, remember_token: str = "") -> None:
+    """Guarda session token en cache y actualiza .env si hay nuevo remember token."""
+    token_file.write_text(session_token)
+    if remember_token:
+        env_path = Path.home() / "projects/Risk-Neutral-Density-Probabilities/.env"
+        if env_path.exists():
+            lines = env_path.read_text().splitlines()
+            new_lines = []
+            found = False
+            for line in lines:
+                if line.startswith("TASTYTRADE_REMEMBER_TOKEN="):
+                    new_lines.append(f"TASTYTRADE_REMEMBER_TOKEN={remember_token}")
+                    found = True
+                else:
+                    new_lines.append(line)
+            if not found:
+                new_lines.append(f"TASTYTRADE_REMEMBER_TOKEN={remember_token}")
+            env_path.write_text("\n".join(new_lines) + "\n")
+            logger.info("Remember token actualizado en .env")
+
+
+def _get_tt_token(env_path: Optional[str] = None) -> str:
+    """
+    Obtiene session token de tastytrade con auto-renovación.
+
+    Orden de prioridad:
+    1. /tmp/tt_token.txt — cache local (validado contra API)
+    2. TASTYTRADE_REMEMBER_TOKEN — renovación sin OTP
+    3. TASTYTRADE_PASSWORD — login directo (funciona sin OTP desde IPs conocidas)
+
+    Al renovar: guarda el nuevo session token en /tmp y actualiza
+    el remember token en .env para el siguiente arranque.
+    """
+    token_file = Path("/tmp/tt_token.txt")
+
+    # 1. Cache — verificar que sigue válido
+    if token_file.exists():
+        cached = token_file.read_text().strip()
+        if cached and _session_valid(cached):
+            return cached
+        logger.info("Cache expirado — renovando token")
+
+    creds = _load_credentials(env_path)
+    login = creds["login"]
+    if not login:
+        raise RuntimeError("TASTYTRADE_LOGIN no configurado")
+
+    # 2. Remember token
+    if creds["remember_token"]:
+        data = _auth_with_remember(login, creds["remember_token"])
+        if data and data.get("session-token"):
+            logger.info("Token renovado via remember-token")
+            _save_session(token_file, data["session-token"], data.get("remember-token", ""))
+            return data["session-token"]
+        logger.warning("Remember token inválido/expirado — intentando password")
+
+    # 3. Password directo
+    if creds["password"]:
+        data = _auth_with_password(login, creds["password"])
+        if data and data.get("session-token"):
+            logger.info("Token renovado via password")
+            _save_session(token_file, data["session-token"], data.get("remember-token", ""))
+            return data["session-token"]
+
+    raise RuntimeError(
+        "No se pudo autenticar con tastytrade. "
+        "Verifica TASTYTRADE_LOGIN, TASTYTRADE_PASSWORD y TASTYTRADE_REMEMBER_TOKEN."
+    )
 
 
 # ── Vencimientos ──────────────────────────────────────────────────────────────
