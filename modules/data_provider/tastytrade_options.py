@@ -136,9 +136,16 @@ def _get_tt_token(env_path: Optional[str] = None) -> str:
     Al renovar: guarda el nuevo session token en /tmp y actualiza
     el remember token en .env para el siguiente arranque.
     """
+    import os
     token_file = Path("/tmp/tt_token.txt")
 
-    # 1. Cache — verificar que sigue válido
+    # 0. TASTYTRADE_SESSION_TOKEN — token pre-generado (para Render/prod donde login directo falla)
+    env_session = os.environ.get("TASTYTRADE_SESSION_TOKEN", "").strip()
+    if env_session and _session_valid(env_session):
+        token_file.write_text(env_session)  # cachear para las siguientes llamadas
+        return env_session
+
+    # 1. Cache local — verificar que sigue válido
     if token_file.exists():
         cached = token_file.read_text().strip()
         if cached and _session_valid(cached):
