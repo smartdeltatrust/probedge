@@ -266,8 +266,8 @@ def build_clean_calls_from_chain(
     T_years = max(T_years, 1e-6)
 
     df = options_df.copy()
-    calls = df[df["option_type"] == "call"].copy()
-    puts = df[df["option_type"] == "put"].copy()
+    calls = df[df["option_type"].str.upper().isin(["CALL","C"])].copy()
+    puts = df[df["option_type"].str.upper().isin(["PUT","P"])].copy()
 
     calls = calls.set_index("strike")
     puts = puts.set_index("strike")
@@ -383,10 +383,13 @@ def compute_rnd_from_calls(
     oi_col = _col(df, "open_int", "Open Int.", "Open Int", "open_interest")
 
     # Solo CALLS
-    calls = df[df[type_col].str.lower() == "call"].copy()
+    calls = df[df[type_col].str.upper().isin(["CALL","C"])].copy()
 
-    # Filtro por OI mínimo
-    calls = calls[calls[oi_col] >= oi_min]
+    # Filtro por OI mínimo — solo si hay datos de OI (tastytrade no los provee)
+    oi_series = calls[oi_col].astype(float)
+    if oi_series.notna().any():
+        calls = calls[oi_series >= oi_min]
+    # Si todos son NaN (ej. tastytrade), saltarse el filtro y usar bid/ask
 
     # Mid-price razonable: (bid+ask)/2, luego bid, luego ask, luego last
     bid = calls[bid_col].astype(float)
