@@ -150,26 +150,26 @@ def _get_tt_token(env_path: Optional[str] = None) -> str:
     if not login:
         raise RuntimeError("TASTYTRADE_LOGIN no configurado")
 
-    # 2. Remember token
-    if creds["remember_token"]:
-        data = _auth_with_remember(login, creds["remember_token"])
-        if data and data.get("session-token"):
-            logger.info("Token renovado via remember-token")
-            _save_session(token_file, data["session-token"], data.get("remember-token", ""))
-            return data["session-token"]
-        logger.warning("Remember token inválido/expirado — intentando password")
-
-    # 3. Password directo
+    # 2. Password directo — más confiable en producción (no expira como el remember token)
     if creds["password"]:
         data = _auth_with_password(login, creds["password"])
         if data and data.get("session-token"):
             logger.info("Token renovado via password")
             _save_session(token_file, data["session-token"], data.get("remember-token", ""))
             return data["session-token"]
+        logger.warning("Password falló — intentando remember token")
+
+    # 3. Remember token como fallback
+    if creds["remember_token"]:
+        data = _auth_with_remember(login, creds["remember_token"])
+        if data and data.get("session-token"):
+            logger.info("Token renovado via remember-token")
+            _save_session(token_file, data["session-token"], data.get("remember-token", ""))
+            return data["session-token"]
 
     raise RuntimeError(
         "No se pudo autenticar con tastytrade. "
-        "Verifica TASTYTRADE_LOGIN, TASTYTRADE_PASSWORD y TASTYTRADE_REMEMBER_TOKEN."
+        "Verifica TASTYTRADE_LOGIN y TASTYTRADE_PASSWORD en Render."
     )
 
 
