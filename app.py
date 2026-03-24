@@ -188,8 +188,8 @@ def render_densidades(ticker: str):
         _get_tt_token()
     except Exception:
         st.error(
-            "Tastytrade token not available. "
-            "Check /tmp/tt_token.txt or .env credentials (TASTYTRADE_LOGIN / TASTYTRADE_REMEMBER_TOKEN)."
+            "⚠️ No se pudo conectar con tastytrade. "
+            "Verifica las variables TASTYTRADE_LOGIN y TASTYTRADE_PASSWORD en Render."
         )
         st.stop()
 
