@@ -36,29 +36,41 @@ TIMEOUT_DATA = 30  # Segundos — más amplio porque hay muchos símbolos
 
 def _get_tt_token(env_path: Optional[str] = None) -> str:
     """
-    Lee /tmp/tt_token.txt. Si no existe o está vacío, re-autentica desde .env.
+    Obtiene session token de tastytrade. Orden de prioridad:
+    1. /tmp/tt_token.txt (cache local)
+    2. Variables de entorno del sistema (TASTYTRADE_LOGIN + TASTYTRADE_REMEMBER_TOKEN)
+    3. Archivo .env del proyecto
     """
+    import os
+
+    # 1. Cache local
     token_file = Path("/tmp/tt_token.txt")
     if token_file.exists():
         tt_token = token_file.read_text().strip()
         if tt_token:
             return tt_token
 
-    if env_path is None:
-        env_path = str(Path.home() / "projects/Risk-Neutral-Density-Probabilities/.env")
-
+    # 2. Variables de entorno del sistema (Render, Docker, etc.)
     env: dict[str, str] = {}
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                env[k.strip()] = v.strip()
+    remember = os.environ.get("TASTYTRADE_REMEMBER_TOKEN", "")
+    login    = os.environ.get("TASTYTRADE_LOGIN", "")
 
-    remember = env.get("TASTYTRADE_REMEMBER_TOKEN", "")
-    login    = env.get("TASTYTRADE_LOGIN", "")
+    # 3. Archivo .env como fallback
     if not remember or not login:
-        raise RuntimeError("No hay token de tastytrade disponible en /tmp/tt_token.txt ni en .env")
+        if env_path is None:
+            env_path = str(Path.home() / "projects/Risk-Neutral-Density-Probabilities/.env")
+        if Path(env_path).exists():
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, _, v = line.partition("=")
+                        env[k.strip()] = v.strip()
+            remember = env.get("TASTYTRADE_REMEMBER_TOKEN", remember)
+            login    = env.get("TASTYTRADE_LOGIN", login)
+
+    if not remember or not login:
+        raise RuntimeError("No hay credenciales de tastytrade. Configura TASTYTRADE_LOGIN y TASTYTRADE_REMEMBER_TOKEN.")
 
     payload = json.dumps({"login": login, "remember-token": remember}).encode()
     req = urllib.request.Request(

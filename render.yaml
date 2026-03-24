@@ -5,11 +5,13 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: MASSIVE_API_KEY
+      - key: TASTYTRADE_LOGIN
+        sync: false
+      - key: TASTYTRADE_PASSWORD
+        sync: false
+      - key: TASTYTRADE_REMEMBER_TOKEN
         sync: false
       - key: FMP_API_KEY
-        sync: false
-      - key: FINVIZ_AUTH_TOKEN
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
@@ -27,11 +29,13 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
     envVars:
-      - key: MASSIVE_API_KEY
+      - key: TASTYTRADE_LOGIN
+        sync: false
+      - key: TASTYTRADE_PASSWORD
+        sync: false
+      - key: TASTYTRADE_REMEMBER_TOKEN
         sync: false
       - key: FMP_API_KEY
-        sync: false
-      - key: FINVIZ_AUTH_TOKEN
         sync: false
       - key: APP_ENV
         value: production
