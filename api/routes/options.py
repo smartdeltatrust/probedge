@@ -1,22 +1,27 @@
 """
 api/routes/options.py
-Endpoints de opciones — Massive API + RND via Breeden-Litzenberger.
+Endpoints de opciones — tastytrade + dxFeed + RND via Breeden-Litzenberger.
 """
 from __future__ import annotations
 
 import math
 import os
 import sys
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
-import requests
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from modules.data_provider.massive import fetch_available_expiries, fetch_options_snapshot
+from modules.data_provider.tastytrade_options import (
+    fetch_available_expiries,
+    fetch_options_snapshot,
+    get_spot_price,
+    _get_tt_token,
+)
 from modules.utils import compute_rnd_from_calls
 from api.auth.dependencies import get_current_user
 from api.auth.models import User
@@ -32,16 +37,6 @@ def clean_record(row: dict) -> dict:
         k: (None if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v)
         for k, v in row.items()
     }
-
-
-def get_spot_price(ticker: str, fmp_api_key: str) -> float:
-    url = "https://financialmodelingprep.com/stable/quote"
-    resp = requests.get(url, params={"symbol": ticker, "apikey": fmp_api_key}, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
-    if not data:
-        raise ValueError(f"FMP no devolvió datos para {ticker}")
-    return float(data[0]["price"])
 
 
 def _safe_float(value):
@@ -61,19 +56,20 @@ async def _prepare_rnd_data(
     oi_min: int,
     n_grid: int,
 ):
-    settings = get_settings()
+    tt_token = _get_tt_token()
+
     if not expiration:
-        expiries = fetch_available_expiries(ticker.upper(), settings.massive_api_key)
+        expiries = fetch_available_expiries(ticker.upper(), tt_token)
         if not expiries:
             raise HTTPException(status_code=404, detail=f"No hay vencimientos para {ticker}")
         expiration = expiries[0]
 
     try:
-        spot = get_spot_price(ticker.upper(), settings.fmp_api_key)
+        spot = get_spot_price(ticker.upper(), tt_token)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Error FMP (spot): {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"Error dxFeed (spot): {exc}") from exc
 
-    df = fetch_options_snapshot(ticker.upper(), expiration, settings.massive_api_key)
+    df = fetch_options_snapshot(ticker.upper(), expiration, tt_token)
     if df.empty:
         raise HTTPException(status_code=404, detail=f"Sin datos para {ticker} exp {expiration}")
 
@@ -110,12 +106,12 @@ async def get_expiries(
     ticker: str,
     current_user: User = Depends(get_current_user),
 ):
-    settings = get_settings()
     try:
-        expiries = fetch_available_expiries(ticker.upper(), settings.massive_api_key)
+        tt_token = _get_tt_token()
+        expiries = fetch_available_expiries(ticker.upper(), tt_token)
         return {"ticker": ticker.upper(), "expiries": expiries, "count": len(expiries)}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Error Massive API: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"Error tastytrade API: {exc}") from exc
 
 
 @router.get("/{ticker}/chain", dependencies=[Depends(rate_limit_dependency)])
@@ -125,15 +121,15 @@ async def get_options_chain(
     limit: int = Query(50, description="Máximo de contratos a retornar."),
     current_user: User = Depends(get_current_user),
 ):
-    settings = get_settings()
     try:
+        tt_token = _get_tt_token()
         if not expiration:
-            expiries = fetch_available_expiries(ticker.upper(), settings.massive_api_key)
+            expiries = fetch_available_expiries(ticker.upper(), tt_token)
             if not expiries:
                 raise HTTPException(status_code=404, detail=f"No hay vencimientos para {ticker}")
             expiration = expiries[0]
 
-        df = fetch_options_snapshot(ticker.upper(), expiration, settings.massive_api_key)
+        df = fetch_options_snapshot(ticker.upper(), expiration, tt_token)
         if df.empty:
             raise HTTPException(status_code=404, detail=f"Sin datos para {ticker} exp {expiration}")
 
