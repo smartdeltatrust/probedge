@@ -186,10 +186,15 @@ def render_densidades(ticker: str):
         st.stop()
     try:
         _get_tt_token()
-    except Exception:
+    except Exception as _tt_err:
+        import os as _os
+        _login_present = bool(_os.environ.get("TASTYTRADE_LOGIN"))
+        _pwd_present   = bool(_os.environ.get("TASTYTRADE_PASSWORD"))
         st.error(
-            "⚠️ No se pudo conectar con tastytrade. "
-            "Verifica las variables TASTYTRADE_LOGIN y TASTYTRADE_PASSWORD en Render."
+            f"⚠️ No se pudo conectar con tastytrade.\n\n"
+            f"TASTYTRADE_LOGIN: {'✅' if _login_present else '❌ falta'} | "
+            f"TASTYTRADE_PASSWORD: {'✅' if _pwd_present else '❌ falta'}\n\n"
+            f"Error: {_tt_err}"
         )
         st.stop()
 
