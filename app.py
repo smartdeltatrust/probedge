@@ -188,12 +188,17 @@ def render_densidades(ticker: str):
         _get_tt_token()
     except Exception as _tt_err:
         import os as _os
-        _login_present = bool(_os.environ.get("TASTYTRADE_LOGIN"))
-        _pwd_present   = bool(_os.environ.get("TASTYTRADE_PASSWORD"))
+        def _ck(k: str) -> str:
+            return "✅" if _os.environ.get(k) else "❌"
         st.error(
-            f"⚠️ No se pudo conectar con tastytrade.\n\n"
-            f"TASTYTRADE_LOGIN: {'✅' if _login_present else '❌ falta'} | "
-            f"TASTYTRADE_PASSWORD: {'✅' if _pwd_present else '❌ falta'}\n\n"
+            "⚠️ No se pudo conectar con tastytrade.\n\n"
+            f"OAuth (recomendado en Render): "
+            f"CLIENT_ID {_ck('TASTYTRADE_CLIENT_ID')} | "
+            f"CLIENT_SECRET {_ck('TASTYTRADE_CLIENT_SECRET')} | "
+            f"REFRESH_TOKEN {_ck('TASTYTRADE_REFRESH_TOKEN')}\n\n"
+            f"Legacy (sólo IPs conocidas): "
+            f"LOGIN {_ck('TASTYTRADE_LOGIN')} | "
+            f"PASSWORD {_ck('TASTYTRADE_PASSWORD')}\n\n"
             f"Error: {_tt_err}"
         )
         st.stop()
