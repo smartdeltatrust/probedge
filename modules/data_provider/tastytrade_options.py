@@ -143,12 +143,11 @@ def _get_tt_token(env_path: Optional[str] = None) -> str:
 
     token_file = Path("/tmp/tt_token.txt")
 
-    # 0. OAuth Personal Grant — único camino reproducible desde Render
+    # 0. OAuth Personal Grant — único camino reproducible desde Render.
+    # Si las 3 vars OAuth están presentes, OAuth es la fuente de verdad: si falla
+    # propagamos el error real (el fallback legacy no funciona en Render por IP).
     if is_oauth_configured():
-        try:
-            return f"Bearer {get_oauth_access_token()}"
-        except Exception as exc:
-            logger.warning("OAuth falló (%s) — cayendo a flujo session-token", exc)
+        return f"Bearer {get_oauth_access_token()}"
 
     # 1. TASTYTRADE_SESSION_TOKEN — token pre-generado (para Render/prod donde login directo falla)
     env_session = os.environ.get("TASTYTRADE_SESSION_TOKEN", "").strip()
