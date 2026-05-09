@@ -126,26 +126,37 @@ def _save_session(token_file: Path, session_token: str, remember_token: str = ""
 
 def _get_tt_token(env_path: Optional[str] = None) -> str:
     """
-    Obtiene session token de tastytrade con auto-renovación.
+    Obtiene un token de autorización para tastytrade.
+
+    El valor retornado se inyecta tal cual en `Authorization: <token>`.
+    Cuando es OAuth lleva prefijo "Bearer "; cuando es session-token legacy va raw.
 
     Orden de prioridad:
-    1. /tmp/tt_token.txt — cache local (validado contra API)
-    2. TASTYTRADE_REMEMBER_TOKEN — renovación sin OTP
-    3. TASTYTRADE_PASSWORD — login directo (funciona sin OTP desde IPs conocidas)
-
-    Al renovar: guarda el nuevo session token en /tmp y actualiza
-    el remember token en .env para el siguiente arranque.
+    0. OAuth Personal Grant — refresh_token → access_token (renovable sin OTP, único camino que funciona en Render)
+    1. TASTYTRADE_SESSION_TOKEN — token pre-generado (legacy)
+    2. /tmp/tt_token.txt — cache local validado
+    3. TASTYTRADE_PASSWORD — login directo (sólo IPs conocidas)
+    4. TASTYTRADE_REMEMBER_TOKEN — fallback
     """
     import os
+    from modules.data_provider.tt_oauth import get_oauth_access_token, is_oauth_configured
+
     token_file = Path("/tmp/tt_token.txt")
 
-    # 0. TASTYTRADE_SESSION_TOKEN — token pre-generado (para Render/prod donde login directo falla)
+    # 0. OAuth Personal Grant — único camino reproducible desde Render
+    if is_oauth_configured():
+        try:
+            return f"Bearer {get_oauth_access_token()}"
+        except Exception as exc:
+            logger.warning("OAuth falló (%s) — cayendo a flujo session-token", exc)
+
+    # 1. TASTYTRADE_SESSION_TOKEN — token pre-generado (para Render/prod donde login directo falla)
     env_session = os.environ.get("TASTYTRADE_SESSION_TOKEN", "").strip()
     if env_session and _session_valid(env_session):
         token_file.write_text(env_session)  # cachear para las siguientes llamadas
         return env_session
 
-    # 1. Cache local — verificar que sigue válido
+    # 2. Cache local — verificar que sigue válido
     if token_file.exists():
         cached = token_file.read_text().strip()
         if cached and _session_valid(cached):
@@ -157,7 +168,7 @@ def _get_tt_token(env_path: Optional[str] = None) -> str:
     if not login:
         raise RuntimeError("TASTYTRADE_LOGIN no configurado")
 
-    # 2. Password directo — más confiable en producción (no expira como el remember token)
+    # 3. Password directo — sólo funciona desde IPs conocidas
     if creds["password"]:
         data = _auth_with_password(login, creds["password"])
         if data and data.get("session-token"):
@@ -166,7 +177,7 @@ def _get_tt_token(env_path: Optional[str] = None) -> str:
             return data["session-token"]
         logger.warning("Password falló — intentando remember token")
 
-    # 3. Remember token como fallback
+    # 4. Remember token como fallback
     if creds["remember_token"]:
         data = _auth_with_remember(login, creds["remember_token"])
         if data and data.get("session-token"):

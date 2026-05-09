@@ -5,11 +5,11 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: TASTYTRADE_LOGIN
+      - key: TASTYTRADE_CLIENT_ID
         sync: false
-      - key: TASTYTRADE_PASSWORD
+      - key: TASTYTRADE_CLIENT_SECRET
         sync: false
-      - key: TASTYTRADE_REMEMBER_TOKEN
+      - key: TASTYTRADE_REFRESH_TOKEN
         sync: false
       - key: FMP_API_KEY
         sync: false
@@ -31,11 +31,11 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
     envVars:
-      - key: TASTYTRADE_LOGIN
+      - key: TASTYTRADE_CLIENT_ID
         sync: false
-      - key: TASTYTRADE_PASSWORD
+      - key: TASTYTRADE_CLIENT_SECRET
         sync: false
-      - key: TASTYTRADE_REMEMBER_TOKEN
+      - key: TASTYTRADE_REFRESH_TOKEN
         sync: false
       - key: FMP_API_KEY
         sync: false

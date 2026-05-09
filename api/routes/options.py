@@ -4,6 +4,7 @@ Endpoints de opciones — tastytrade + dxFeed + RND via Breeden-Litzenberger.
 """
 from __future__ import annotations
 
+import asyncio
 import math
 import os
 import sys
@@ -56,20 +57,20 @@ async def _prepare_rnd_data(
     oi_min: int,
     n_grid: int,
 ):
-    tt_token = _get_tt_token()
+    tt_token = await asyncio.to_thread(_get_tt_token)
 
     if not expiration:
-        expiries = fetch_available_expiries(ticker.upper(), tt_token)
+        expiries = await asyncio.to_thread(fetch_available_expiries, ticker.upper(), tt_token)
         if not expiries:
             raise HTTPException(status_code=404, detail=f"No hay vencimientos para {ticker}")
         expiration = expiries[0]
 
     try:
-        spot = get_spot_price(ticker.upper(), tt_token)
+        spot = await asyncio.to_thread(get_spot_price, ticker.upper(), tt_token)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Error dxFeed (spot): {exc}") from exc
 
-    df = fetch_options_snapshot(ticker.upper(), expiration, tt_token)
+    df = await asyncio.to_thread(fetch_options_snapshot, ticker.upper(), expiration, tt_token)
     if df.empty:
         raise HTTPException(status_code=404, detail=f"Sin datos para {ticker} exp {expiration}")
 
@@ -107,8 +108,8 @@ async def get_expiries(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        tt_token = _get_tt_token()
-        expiries = fetch_available_expiries(ticker.upper(), tt_token)
+        tt_token = await asyncio.to_thread(_get_tt_token)
+        expiries = await asyncio.to_thread(fetch_available_expiries, ticker.upper(), tt_token)
         return {"ticker": ticker.upper(), "expiries": expiries, "count": len(expiries)}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Error tastytrade API: {exc}") from exc
@@ -122,14 +123,14 @@ async def get_options_chain(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        tt_token = _get_tt_token()
+        tt_token = await asyncio.to_thread(_get_tt_token)
         if not expiration:
-            expiries = fetch_available_expiries(ticker.upper(), tt_token)
+            expiries = await asyncio.to_thread(fetch_available_expiries, ticker.upper(), tt_token)
             if not expiries:
                 raise HTTPException(status_code=404, detail=f"No hay vencimientos para {ticker}")
             expiration = expiries[0]
 
-        df = fetch_options_snapshot(ticker.upper(), expiration, tt_token)
+        df = await asyncio.to_thread(fetch_options_snapshot, ticker.upper(), expiration, tt_token)
         if df.empty:
             raise HTTPException(status_code=404, detail=f"Sin datos para {ticker} exp {expiration}")
 

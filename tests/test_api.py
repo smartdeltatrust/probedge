@@ -17,7 +17,6 @@ from api.credits.service import CreditService
 from api.main import app
 
 TICKER = "SPY"
-EXPIRY = "2026-03-23"
 
 
 @pytest.fixture(scope="module")
@@ -29,6 +28,19 @@ def anyio_backend():
 async def client():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+
+@pytest.fixture(scope="module")
+async def expiry(client, auth_user):
+    """Primer expiry vivo de tastytrade ≥14 días — evita bit-rot por fechas hardcodeadas."""
+    import pandas as pd
+    r = await client.get(f"/options/{TICKER}/expiries", headers=auth_user["headers"])
+    r.raise_for_status()
+    today = pd.Timestamp.today().normalize()
+    for e in r.json()["expiries"]:
+        if (pd.Timestamp(e) - today).days >= 14:
+            return e
+    pytest.skip("No hay expiries ≥14d disponibles")
 
 
 async def _ensure_test_user(email: str, password: str, client: AsyncClient):
@@ -103,10 +115,10 @@ async def test_expiries_returns_list(client, auth_user):
 
 
 @pytest.mark.anyio
-async def test_chain_returns_contracts(client, auth_user):
+async def test_chain_returns_contracts(client, auth_user, expiry):
     r = await client.get(
         f"/options/{TICKER}/chain",
-        params={"expiration": EXPIRY, "limit": 5},
+        params={"expiration": expiry, "limit": 5},
         headers=auth_user["headers"],
     )
     assert r.status_code == 200
@@ -115,8 +127,8 @@ async def test_chain_returns_contracts(client, auth_user):
 
 
 @pytest.mark.anyio
-async def test_rnd_is_valid_density(client, auth_user):
-    r = await client.get(f"/options/{TICKER}/rnd", params={"expiration": EXPIRY}, headers=auth_user["headers"])
+async def test_rnd_is_valid_density(client, auth_user, expiry):
+    r = await client.get(f"/options/{TICKER}/rnd", params={"expiration": expiry}, headers=auth_user["headers"])
     assert r.status_code == 200
     data = r.json()
     pg = [v for v in data["price_grid"] if v is not None]
@@ -141,11 +153,11 @@ async def test_market_history(client, auth_user):
 
 
 @pytest.mark.anyio
-async def test_credit_consumption(client, auth_user):
+async def test_credit_consumption(client, auth_user, expiry):
     before = await client.get("/credits/wallet", headers=auth_user["headers"])
     resp = await client.get(
         f"/options/{TICKER}/probabilities",
-        params={"expiration": EXPIRY, "price_target": 400},
+        params={"expiration": expiry, "price_target": 400},
         headers=auth_user["headers"],
     )
     assert resp.status_code == 200
