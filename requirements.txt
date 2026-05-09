@@ -42,3 +42,6 @@ limits>=3.10
 # Validation
 email-validator>=2.1
 
+# LLM (skew interpretation, fundamentales analysis)
+anthropic>=0.40
+

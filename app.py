@@ -178,10 +178,18 @@ def _stream_skew_interpretation(payload_json: str, model: str):
     Permite efecto typewriter en la UI cuando se renderiza con st.empty().
     """
     import json as _json
-    from modules.llm_anthropic import get_anthropic_client
+    import os as _os
+    from modules.llm_anthropic import get_anthropic_client, Anthropic as _Anthropic
+    if _Anthropic is None:
+        yield ("⚠️ Paquete 'anthropic' no instalado en este entorno. "
+               "Agregá `anthropic>=0.40` a requirements.txt y redeployá.")
+        return
+    if not (_os.getenv("ANTHROPIC_API_KEY") or "").strip():
+        yield "⚠️ ANTHROPIC_API_KEY no configurada en este entorno."
+        return
     client = get_anthropic_client()
     if client is None:
-        yield "⚠️ ANTHROPIC_API_KEY no configurada — interpretación no disponible."
+        yield "⚠️ Cliente Anthropic no disponible (causa desconocida)."
         return
     p = _json.loads(payload_json)
 
