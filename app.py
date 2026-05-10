@@ -474,13 +474,13 @@ def render_densidades(ticker: str):
             return "✅" if _os.environ.get(k) else "❌"
         st.error(
             "⚠️ No se pudo conectar con tastytrade.\n\n"
-            f"OAuth (recomendado en Render): "
+            f"OAuth Personal Grant: "
             f"CLIENT_ID {_ck('TASTYTRADE_CLIENT_ID')} | "
             f"CLIENT_SECRET {_ck('TASTYTRADE_CLIENT_SECRET')} | "
             f"REFRESH_TOKEN {_ck('TASTYTRADE_REFRESH_TOKEN')}\n\n"
-            f"Legacy (sólo IPs conocidas): "
-            f"LOGIN {_ck('TASTYTRADE_LOGIN')} | "
-            f"PASSWORD {_ck('TASTYTRADE_PASSWORD')}\n\n"
+            f"Si los 3 están en ✅, el grant probablemente fue revocado en "
+            f"my.tastytrade.com → Manage → API Access. Generá uno nuevo y "
+            f"actualizá el secret en Render.\n\n"
             f"Error: {_tt_err}"
         )
         st.stop()

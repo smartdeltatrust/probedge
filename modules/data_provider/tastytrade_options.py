@@ -186,7 +186,10 @@ def _get_tt_token(env_path: Optional[str] = None) -> str:
 
     raise RuntimeError(
         "No se pudo autenticar con tastytrade. "
-        "Verifica TASTYTRADE_LOGIN y TASTYTRADE_PASSWORD en Render."
+        "Verificá TASTYTRADE_CLIENT_ID, TASTYTRADE_CLIENT_SECRET y "
+        "TASTYTRADE_REFRESH_TOKEN (OAuth Personal Grant). Si están "
+        "configurados pero falla, el grant pudo haber sido revocado en "
+        "my.tastytrade.com → Manage → API Access."
     )
 
 

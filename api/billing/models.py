@@ -34,6 +34,13 @@ class Subscription(Base):
     def is_active(self) -> bool:
         if self.status not in {"active", "trialing"}:
             return False
-        if not self.current_period_end:
+        end = self.current_period_end
+        if not end:
             return False
-        return self.current_period_end > datetime.now(timezone.utc)
+        # SQLite no preserva tzinfo en columnas DateTime(timezone=True): un valor
+        # almacenado como UTC-aware vuelve naive. Asumimos UTC para el caso naive
+        # antes de comparar contra datetime.now(timezone.utc), evitando el
+        # TypeError "can't compare offset-naive and offset-aware datetimes".
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        return end > datetime.now(timezone.utc)

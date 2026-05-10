@@ -36,9 +36,6 @@ systemctl --user start rnd-api.service
 systemctl --user status rnd-api.service
 journalctl --user -u rnd-api.service -f
 
-# Renew tastytrade session token (cron-friendly; updates .env + Render)
-python3 scripts/renew_tt_token.py
-
 # Docker (production-shaped)
 docker build -t rnd-api .
 docker run --env-file .env -p 8000:8000 rnd-api
@@ -73,7 +70,6 @@ modules/
     fmp_*.py                   Fundamentals adapters used by Streamlit fundamentals tab
   domain/, services/           Used by the Streamlit fundamentals views
   llm_anthropic.py             Anthropic-backed analysis used in the Streamlit app
-scripts/renew_tt_token.py      Token renewal cron (see "tastytrade auth" below)
 tests/test_api.py              All integration tests (single file, async, hits real FMP + tastytrade)
 ```
 
@@ -102,7 +98,6 @@ Resolution order (most preferred first):
 
 Operational implications:
 
-- **The `scripts/renew_tt_token.py` cron is now redundant** for the OAuth path — keep it only as a belt-and-suspenders for the session-token fallback. Don't rely on it.
 - The chain returns `option_type` as `C`/`P` from tastytrade (not `call`/`put` — fix in commit 622ac76). Anywhere that filters on this column should accept both forms.
 - If OAuth starts returning 401 unexpectedly, the most likely cause is `client_secret` rotation — there's a `Regenerate` button on the OAuth Applications panel that invalidates the secret on click and only displays the new one once.
 
