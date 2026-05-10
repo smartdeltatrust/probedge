@@ -38,6 +38,35 @@ st.set_page_config(
     layout="wide",
 )
 
+# Tipografía moderna estilo fintech (Inter para UI, JetBrains Mono para datos).
+# Inter = sans geométrica que usan tastytrade/Robinhood/Linear; JetBrains Mono =
+# monospace con alternates matemáticos (cero cortado, ligatures), mucho más
+# moderna que Consolas pero con el mismo espíritu técnico/financiero.
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+    html, body, [class*="css"], .stApp, .stMarkdown, .stTextInput, .stSelectbox,
+    .stNumberInput, .stCheckbox, .stRadio, .stButton, .stTextArea,
+    .stCaption, .stAlert, h1, h2, h3, h4, h5, h6, p, label, span, div {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-feature-settings: "cv11", "ss01", "ss03";
+    }
+    code, pre, .stCode, .stDataFrame, .stDataFrameGlideDataEditor,
+    .stMetric [data-testid="stMetricValue"], .stMetric [data-testid="stMetricLabel"] {
+        font-family: 'JetBrains Mono', 'Consolas', 'SF Mono', monospace !important;
+        font-feature-settings: "calt", "zero", "ss01";
+    }
+    /* Captions de Streamlit con tracking ligero para look financiero */
+    .stCaption, [data-testid="stCaptionContainer"] {
+        letter-spacing: 0.01em;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # === ENTORNO ===
 APP_ENV = os.getenv("APP_ENV", "").strip().lower()
 IS_DEV = APP_ENV in ("", "dev", "development")
@@ -90,6 +119,76 @@ def cached_options(ticker: str, expiry: str):
     df["mid_price"] = mid
     df["price"] = df["mid_price"]
     return df.reset_index(drop=True)
+
+
+# ─────────────────────────────────────────────
+# PoP table — premium-selling reference (heatmap-styled DataFrame)
+# ─────────────────────────────────────────────
+def _build_pop_table(K_grid, pdf_K, spot):
+    """
+    Tabla de referencia para venta de prima. Para una grilla de strikes
+    sampleados a niveles fijos del CDF, computa Call PoP y Put PoP risk-neutral.
+
+    Convención:
+      - Call PoP = P(S_T ≤ K) = CDF(K)        → prob de que un short call expire OTM.
+      - Put  PoP = P(S_T ≥ K) = 1 − CDF(K)    → prob de que un short put expire OTM.
+
+    El CDF se extrae de la RND al vencimiento (ya incorpora todo el skew de IV).
+    """
+    K_grid = np.asarray(K_grid, dtype=float)
+    pdf_K = np.asarray(pdf_K, dtype=float)
+    if len(K_grid) < 2:
+        return None
+    dx_K = float(K_grid[1] - K_grid[0])
+    pdf_clean = np.clip(np.nan_to_num(pdf_K), 0, None)
+    if pdf_clean.sum() <= 0 or dx_K <= 0:
+        return None
+    cdf = np.cumsum(pdf_clean) * dx_K
+    if cdf[-1] <= 0:
+        return None
+    cdf = cdf / cdf[-1]
+
+    # Niveles del CDF a los que sampleamos el strike (orden ascendente).
+    levels = [0.05, 0.10, 0.16, 0.25, 0.35, 0.50, 0.65, 0.75, 0.84, 0.90, 0.95]
+    rows = []
+    for lvl in levels:
+        idx = int(np.searchsorted(cdf, lvl))
+        idx = max(0, min(idx, len(K_grid) - 1))
+        K = float(K_grid[idx])
+        call_pop = lvl * 100.0
+        put_pop = (1.0 - lvl) * 100.0
+        pct_spot = (K - float(spot)) / float(spot) * 100.0 if spot else 0.0
+        rows.append({
+            "Call PoP": round(call_pop, 1),
+            "Strike": round(K, 2),
+            "Δ spot": round(pct_spot, 1),
+            "Put PoP": round(put_pop, 1),
+        })
+    return pd.DataFrame(rows)
+
+
+def _render_pop_table(df: "pd.DataFrame"):
+    """
+    Renderiza la tabla con heatmap por celda — colormap custom verde/gris/rojo
+    matching el lenguaje visual del cono (tastytrade).
+    """
+    from matplotlib.colors import LinearSegmentedColormap
+    pop_cmap = LinearSegmentedColormap.from_list(
+        "ttrade_pop",
+        ["#ff3366", "#3a3a3a", "#00d4aa"],
+    )
+    styled = (
+        df.style
+        .background_gradient(cmap=pop_cmap, subset=["Call PoP"], vmin=0, vmax=100)
+        .background_gradient(cmap=pop_cmap, subset=["Put PoP"], vmin=0, vmax=100)
+        .format({
+            "Call PoP": "{:.0f}%",
+            "Strike": "USD {:,.2f}",
+            "Δ spot": "{:+.1f}%",
+            "Put PoP": "{:.0f}%",
+        })
+    )
+    st.dataframe(styled, use_container_width=True, hide_index=True)
 
 
 # ─────────────────────────────────────────────
@@ -271,9 +370,10 @@ def _render_skew_box(text: str) -> str:
         "padding: 14px 18px;"
         "margin: 8px 0;"
         "color: #cccccc;"
-        "font-family: 'Consolas', monospace;"
-        "font-size: 13px;"
-        "line-height: 1.65;"
+        "font-family: 'Inter', -apple-system, sans-serif;"
+        "font-size: 13.5px;"
+        "line-height: 1.7;"
+        "letter-spacing: 0.005em;"
         f"\">{safe}</div>"
     )
 
@@ -604,6 +704,19 @@ def render_densidades(ticker: str):
             "† This interpretation is AI-generated commentary on a risk-neutral "
             "probability study derived from option-chain prices. It is not "
             "financial advice nor a recommendation to trade — use at your own risk."
+        )
+
+    # ─── PoP table (premium-selling reference) ───
+    df_pop = _build_pop_table(K_grid, pdf_K, spot)
+    if df_pop is not None:
+        st.divider()
+        st.subheader("PoP table — premium-selling reference")
+        _render_pop_table(df_pop)
+        st.caption(
+            "Each row pairs a strike (sampled at fixed CDF levels of the RND at "
+            "expiry) with the risk-neutral PoP of a short call (left) and a "
+            "short put (right). Greener cells mean a higher probability the "
+            "option expires OTM, i.e. the short keeps the full premium."
         )
 
     # ─── Explanation & Math (unchanged) ───
