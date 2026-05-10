@@ -80,7 +80,10 @@ async def _prepare_rnd_data(
     if tau_days <= 0:
         raise HTTPException(status_code=422, detail=f"El vencimiento {expiration} ya pasó o es hoy.")
 
-    price_grid, rnd_values = compute_rnd_from_calls(
+    # CPU-bound (numpy + PCHIP); a thread para no bloquear el event loop
+    # cuando hay requests concurrentes.
+    price_grid, rnd_values = await asyncio.to_thread(
+        compute_rnd_from_calls,
         options_df=df.rename(columns={"contract_type": "option_type", "last_price": "last_close"}),
         spot=spot,
         valuation_date=valuation_date,

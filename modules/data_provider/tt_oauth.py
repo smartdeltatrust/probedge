@@ -76,6 +76,7 @@ def _refresh_access_token() -> tuple[str, int]:
     creds = _load_oauth_env()
     missing = [k for k, v in creds.items() if not v]
     if missing:
+        logger.error("oauth refresh_failed reason=missing_env keys=%s", missing)
         raise RuntimeError(f"OAuth incompleto: faltan {missing}")
 
     body = urllib.parse.urlencode({
@@ -94,18 +95,41 @@ def _refresh_access_token() -> tuple[str, int]:
         },
         method="POST",
     )
+    t0 = time.time()
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read())
     except urllib.error.HTTPError as e:
+        latency_ms = int((time.time() - t0) * 1000)
+        body_preview = e.read().decode()[:300]
+        logger.error(
+            "oauth refresh_failed http_code=%d latency_ms=%d body=%r",
+            e.code, latency_ms, body_preview,
+        )
         raise RuntimeError(
-            f"OAuth refresh falló (HTTP {e.code}): {e.read().decode()[:300]}"
+            f"OAuth refresh falló (HTTP {e.code}): {body_preview}"
         ) from e
+    except Exception as e:
+        latency_ms = int((time.time() - t0) * 1000)
+        logger.error(
+            "oauth refresh_failed reason=network_error latency_ms=%d error=%s",
+            latency_ms, e,
+        )
+        raise
 
+    latency_ms = int((time.time() - t0) * 1000)
     access = data.get("access_token", "")
     expires = int(data.get("expires_in", 900))
     if not access:
+        logger.error(
+            "oauth refresh_failed reason=no_access_token latency_ms=%d response_keys=%s",
+            latency_ms, list(data.keys()),
+        )
         raise RuntimeError(f"OAuth: respuesta sin access_token: {data}")
+    logger.info(
+        "oauth refresh_ok latency_ms=%d expires_in_s=%d",
+        latency_ms, expires,
+    )
     return access, expires
 
 
@@ -118,12 +142,15 @@ def get_oauth_access_token(force_refresh: bool = False) -> str:
         and _cached_access_token
         and now < _cached_expires_at - _REFRESH_MARGIN_S
     ):
+        logger.debug(
+            "oauth cache_hit expires_in_s=%d",
+            int(_cached_expires_at - now),
+        )
         return _cached_access_token
 
     access, expires = _refresh_access_token()
     _cached_access_token = access
     _cached_expires_at = now + expires
-    logger.info("OAuth access_token renovado (expira en %ss)", expires)
     return access
 
 
