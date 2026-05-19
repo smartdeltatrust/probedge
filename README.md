@@ -6,6 +6,8 @@ Quantitative options-analytics platform that recovers **risk-neutral densities (
 
 🔗 **Live demo:** [risk-neutral-density-probabilities-3.onrender.com](https://risk-neutral-density-probabilities-3.onrender.com)
 
+![Prob-Edge probability cone over SPY](assets/screenshot-cone.png)
+
 ---
 
 ## What it does
