@@ -955,7 +955,7 @@ def render_valuacion(ticker: str):
     st.divider()
 
     # Análisis Claude streaming
-    st.markdown("#### Dictamen CFA — Valuación")
+    st.markdown("#### Dictamen de Valuación Hecho con IA")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not anthropic_key:
         st.warning("⚠️ ANTHROPIC_API_KEY no configurada — análisis Claude no disponible.")
