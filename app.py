@@ -954,7 +954,7 @@ def render_valuacion(ticker: str):
 
     st.divider()
 
-    # Análisis Claude streaming
+    # Análisis Claude streaming (webhook test)
     st.markdown("#### Dictamen de Valuación Hecho con IA")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not anthropic_key:
