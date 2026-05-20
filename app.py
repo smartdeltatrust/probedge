@@ -713,6 +713,92 @@ def render_densidades(ticker: str):
             unsafe_allow_html=True,
         )
 
+    # ─── Company teaser — short context above the chart ─────────────────────
+    # Positioned narratively between the ProbEdge brand banner and the chart:
+    # the reader first sees "this is ProbEdge", then "this ticker is XYZ
+    # (sector, industry), and here's what they do", and only then the chart.
+    # Short and efficient: just the first ~280 chars of FMP's description,
+    # truncated at a sentence boundary. The detailed deep-dive (logo + facts
+    # + Claude-translated long description) still lives below the chart.
+    if FMP_API_KEY and ticker:
+        try:
+            _teaser_profile = cached_company_profile(ticker, FMP_API_KEY)
+        except Exception:
+            _teaser_profile = None
+        if _teaser_profile is not None:
+            _t_logo = (
+                getattr(_teaser_profile, "logo_url", None)
+                or getattr(_teaser_profile, "image_url", None)
+            )
+            _t_name = getattr(_teaser_profile, "name", None) or ticker
+            _t_sector = getattr(_teaser_profile, "sector", None) or ""
+            _t_industry = getattr(_teaser_profile, "industry", None) or ""
+            _t_desc = getattr(_teaser_profile, "description_en", None) or ""
+
+            # Trim description to ~280 chars at sentence boundary for a punchy preview.
+            if _t_desc:
+                _TMAX = 280
+                if len(_t_desc) > _TMAX:
+                    _t_cut = _t_desc[:_TMAX]
+                    _t_stop = max(
+                        _t_cut.rfind(". "),
+                        _t_cut.rfind("? "),
+                        _t_cut.rfind("! "),
+                    )
+                    if _t_stop < 140:
+                        _t_stop = _t_cut.rfind(" ")
+                    _t_short = (_t_cut[: _t_stop + 1] if _t_stop > 0 else _t_cut) + "…"
+                else:
+                    _t_short = _t_desc
+            else:
+                _t_short = ""
+
+            _t_sector_line = " · ".join([x for x in [_t_sector, _t_industry] if x])
+            _t_logo_html = (
+                f'<img src="{_t_logo}" alt="{_t_name}" '
+                f'style="width: 52px; height: 52px; object-fit: contain; '
+                f'flex: 0 0 auto; border-radius: 6px; background: #0a0a0a; '
+                f'padding: 2px;"/>'
+            ) if _t_logo else ""
+
+            st.markdown(
+                f"""
+                <div style="
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 16px;
+                    padding: 8px 6px 18px 6px;
+                    margin: 0 0 14px 0;
+                ">
+                    {_t_logo_html}
+                    <div style="flex: 1 1 auto; min-width: 0;">
+                        <div style="
+                            font-family: 'Inter', -apple-system, sans-serif;
+                            font-size: 16px;
+                            font-weight: 600;
+                            color: #e8f4f7;
+                            line-height: 1.25;
+                            margin: 0 0 3px 0;
+                        ">{_t_name}</div>
+                        <div style="
+                            font-family: 'Inter', -apple-system, sans-serif;
+                            font-size: 12px;
+                            color: #7a96a0;
+                            margin: 0 0 8px 0;
+                        ">{_t_sector_line}</div>
+                        <div style="
+                            font-family: 'Inter', -apple-system, sans-serif;
+                            font-size: 13.5px;
+                            color: #b5cdd4;
+                            line-height: 1.6;
+                            margin: 0;
+                        ">{_t_short}</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
     plot_main_figure(
         quotes_df, dates_win, price_grid, density_win,
         expiry_dates=expiry_dates_win, valuation_date=valuation_date,
