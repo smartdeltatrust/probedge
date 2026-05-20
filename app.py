@@ -395,40 +395,11 @@ def cached_company_profile(ticker: str, fmp_key: str):
         return None
 
 
-@st.cache_data(ttl=300)
-def cached_key_metrics(ticker: str, fmp_key: str):
-    try:
-        from modules.services.key_metrics_service import build_key_metrics_grouped_payload
-        return build_key_metrics_grouped_payload(symbol=ticker)
-    except Exception as e:
-        return None
-
-
-@st.cache_data(ttl=300)
-def cached_income_statement(ticker: str, fmp_key: str, period: str = "quarter", limit: int = 12):
-    try:
-        from modules.services.income_statement_service import get_income_statement_plot_data
-        return get_income_statement_plot_data(symbol=ticker, fmp_key=fmp_key, period=period, limit=limit)
-    except Exception as e:
-        return None
-
-
-@st.cache_data(ttl=300)
-def cached_income_growth(ticker: str, fmp_key: str):
-    try:
-        from modules.services.income_statement_growth_service import build_income_growth_payload
-        return build_income_growth_payload(symbol=ticker, fmp_key=fmp_key, limit=5, period="FY")
-    except Exception as e:
-        return None
-
-
-@st.cache_data(ttl=300)
-def cached_sector_peers(ticker: str, fmp_key: str, peers_limit: int = 20):
-    try:
-        from modules.services.sector_peers_analysis_service import build_sector_peers_panel
-        return build_sector_peers_panel(symbol=ticker, peers_limit=peers_limit, fmp_api_key=fmp_key)
-    except Exception as e:
-        return None
+# NOTE: cached_key_metrics, cached_income_statement, cached_income_growth,
+# and cached_sector_peers were removed in the MVP cleanup. They powered the
+# Valuation, Financials, and Sector tabs which are no longer part of the
+# app. The underlying modules.services.* code is still on disk in case we
+# want to bring those analyses back later.
 
 
 # ─────────────────────────────────────────────
@@ -983,361 +954,26 @@ def render_empresa(ticker: str):
 
 
 # ─────────────────────────────────────────────
-# TAB: VALUATION
-# ─────────────────────────────────────────────
-def render_valuacion(ticker: str):
-    st.subheader(f"💰 Valuation by Multiples — {ticker}")
-
-    if not FMP_API_KEY:
-        st.error("FMP_API_KEY is not set.")
-        return
-
-    with st.spinner(f"Loading metrics for {ticker}..."):
-        payload = cached_key_metrics(ticker, FMP_API_KEY)
-
-    if payload is None:
-        st.error(f"Could not fetch metrics for **{ticker}**.")
-        return
-
-    group_a = payload.groups.get("A. Valoración y múltiplos", {})
-    group_b = payload.groups.get("B. Rentabilidad y retornos", {})
-
-    def fmt_big(v):
-        if v is None:
-            return "N/A"
-        try:
-            x = float(v)
-            if abs(x) >= 1e12:
-                return f"{x/1e12:.2f}T"
-            if abs(x) >= 1e9:
-                return f"{x/1e9:.2f}B"
-            if abs(x) >= 1e6:
-                return f"{x/1e6:.2f}M"
-            return f"{x:,.2f}"
-        except Exception:
-            return str(v)
-
-    def fmt_ratio(v):
-        if v is None:
-            return "N/A"
-        try:
-            return f"{float(v):,.2f}x"
-        except Exception:
-            return str(v)
-
-    def fmt_pct(v):
-        if v is None:
-            return "N/A"
-        try:
-            x = float(v)
-            x_scaled = x * 100 if abs(x) <= 1.5 else x
-            return f"{x_scaled:.2f}%"
-        except Exception:
-            return str(v)
-
-    st.markdown("##### Key Multiples (TTM)")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.metric("Market Cap", fmt_big(group_a.get("marketCap")))
-    with c2:
-        st.metric("EV", fmt_big(group_a.get("enterpriseValueTTM")))
-    with c3:
-        st.metric("EV/EBITDA", fmt_ratio(group_a.get("evToEBITDATTM")))
-    with c4:
-        st.metric("ROIC", fmt_pct(group_b.get("returnOnInvestedCapitalTTM")))
-
-    c5, c6, c7, c8 = st.columns(4)
-    with c5:
-        st.metric("EV/Sales", fmt_ratio(group_a.get("evToSalesTTM")))
-    with c6:
-        st.metric("EV/FCF", fmt_ratio(group_a.get("evToFreeCashFlowTTM")))
-    with c7:
-        st.metric("Graham Number", fmt_big(group_a.get("grahamNumberTTM")))
-    with c8:
-        st.metric("Graham Net-Net", fmt_big(group_a.get("grahamNetNetTTM")))
-
-    # Profitability & returns
-    st.markdown("##### Profitability & Returns (TTM)")
-    ret_cols = st.columns(4)
-    ret_keys = [
-        ("ROA", "returnOnAssetsTTM"),
-        ("ROE", "returnOnEquityTTM"),
-        ("ROIC", "returnOnInvestedCapitalTTM"),
-        ("FCF Yield", "freeCashFlowYieldTTM"),
-    ]
-    for i, (label, key) in enumerate(ret_keys):
-        with ret_cols[i]:
-            st.metric(label, fmt_pct(group_b.get(key)))
-
-    st.divider()
-
-    # AI-generated valuation verdict (Claude streaming)
-    st.markdown("#### AI Valuation Verdict")
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not anthropic_key:
-        st.warning("⚠️ ANTHROPIC_API_KEY not set — Claude analysis unavailable.")
-        return
-
-    try:
-        from modules.llm_anthropic import stream_valuation_from_multiples
-        placeholder = st.empty()
-        buffer = ""
-        for chunk in stream_valuation_from_multiples(
-            symbol=ticker,
-            multiples=group_a,
-            model=ANTHROPIC_MODEL,
-        ):
-            buffer += chunk
-            placeholder.markdown(buffer + "▌")
-        placeholder.markdown(buffer)
-    except Exception as e:
-        st.warning(f"Claude analysis error: {e}")
-
-
-# ─────────────────────────────────────────────
-# TAB: FINANCIALS
-# ─────────────────────────────────────────────
-def render_financieros(ticker: str):
-    st.subheader(f"📈 Income Statement — {ticker}")
-
-    if not FMP_API_KEY:
-        st.error("FMP_API_KEY is not set.")
-        return
-
-    col_period, col_limit = st.columns(2)
-    with col_period:
-        period = st.selectbox("Period", ["quarter", "annual"], key="fin_period")
-    with col_limit:
-        limit = st.slider("Periods to display", 4, 20, 12, key="fin_limit")
-
-    with st.spinner(f"Loading income statement for {ticker}..."):
-        plot_data = cached_income_statement(ticker, FMP_API_KEY, period=period, limit=limit)
-
-    if plot_data is None or plot_data.df.empty:
-        st.error(f"Could not fetch income statement for **{ticker}**.")
-        return
-
-    df = plot_data.df.copy()
-    div = plot_data.scale_div
-    label = plot_data.scale_label
-
-    # Gráfica de barras agrupadas
-    try:
-        import plotly.graph_objects as go
-
-        fig = go.Figure()
-        colors = {
-            "revenue": "#2196F3",
-            "grossProfit": "#4CAF50",
-            "ebit": "#FF9800",
-            "ebitda": "#9C27B0",
-            "operatingIncome": "#F44336",
-            "netIncome": "#009688",
-        }
-        metric_labels = {
-            "revenue": "Revenue",
-            "grossProfit": "Gross Profit",
-            "ebit": "EBIT",
-            "ebitda": "EBITDA",
-            "operatingIncome": "Op. Income",
-            "netIncome": "Net Income",
-        }
-
-        x_labels = df["date"].dt.strftime("%Y-%m") if "date" in df.columns else df.index.astype(str)
-
-        for metric in plot_data.available_metrics:
-            if metric in df.columns:
-                fig.add_trace(go.Bar(
-                    x=x_labels,
-                    y=df[metric] / div,
-                    name=metric_labels.get(metric, metric),
-                    marker_color=colors.get(metric, "#888"),
-                ))
-
-        fig.update_layout(
-            barmode="group",
-            title=f"{ticker} — Income Statement ({label})",
-            xaxis_title="Period",
-            yaxis_title=label,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-            height=420,
-            margin=dict(l=40, r=20, t=60, b=40),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    except ImportError:
-        st.warning("plotly unavailable — showing table instead.")
-        display_cols = ["date"] + [m for m in plot_data.available_metrics if m in df.columns]
-        df_display = df[display_cols].copy()
-        for m in plot_data.available_metrics:
-            if m in df_display.columns:
-                df_display[m] = (df_display[m] / div).round(2)
-        st.dataframe(df_display, use_container_width=True)
-
-    st.divider()
-
-    # AI-generated growth analysis (Claude)
-    st.markdown("#### Growth Analysis (Claude)")
-
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not anthropic_key:
-        st.warning("⚠️ ANTHROPIC_API_KEY not set.")
-        return
-
-    with st.spinner("Loading growth data..."):
-        growth_payload = cached_income_growth(ticker, FMP_API_KEY)
-
-    if growth_payload is None:
-        st.warning("Could not fetch growth data.")
-        return
-
-    try:
-        from modules.llm_anthropic import stream_income_growth_analysis
-        placeholder = st.empty()
-        buffer = ""
-        for chunk in stream_income_growth_analysis(
-            symbol=ticker,
-            groups_latest=growth_payload.groups_latest,
-            trend=growth_payload.trend,
-            model=ANTHROPIC_MODEL,
-        ):
-            buffer += chunk
-            placeholder.markdown(buffer + "▌")
-        placeholder.markdown(buffer)
-    except Exception as e:
-        st.warning(f"Claude analysis error: {e}")
-
-
-# ─────────────────────────────────────────────
-# TAB: SECTOR
-# ─────────────────────────────────────────────
-def render_sectorial(ticker: str):
-    st.subheader(f"🌐 Sector Analysis — {ticker}")
-
-    if not FMP_API_KEY:
-        st.error("FMP_API_KEY is not set.")
-        return
-
-    peers_limit = st.slider("Peer count", 10, 40, 20, key="sec_peers")
-
-    with st.spinner(f"Building peer set for {ticker} (may take ~30s)..."):
-        panel = cached_sector_peers(ticker, FMP_API_KEY, peers_limit=peers_limit)
-
-    if panel is None:
-        st.error(f"Could not build sector panel for **{ticker}**.")
-        return
-
-    sector = panel.sector or "N/A"
-    industry = panel.industry or "N/A"
-    company_name = panel.company_name or ticker
-
-    st.caption(f"**{company_name}** · Sector: {sector} · Industry: {industry} · Peers analyzed: {len(panel.peers_table)}")
-
-    # Value-Quality ranking
-    if not panel.value_quality_rank.empty:
-        st.markdown("##### 🏆 Value-Quality Ranking (higher score = better)")
-        cols_vq = ["symbol", "companyName", "evToEBITDATTM", "roic", "score"]
-        vq_display = panel.value_quality_rank[[c for c in cols_vq if c in panel.value_quality_rank.columns]].head(15).copy()
-        for num_col in ["evToEBITDATTM", "roic", "score"]:
-            if num_col in vq_display.columns:
-                vq_display[num_col] = vq_display[num_col].round(3)
-        st.dataframe(vq_display, use_container_width=True, hide_index=True)
-    else:
-        st.info("Insufficient data to build Value-Quality ranking.")
-
-    # ROIC ranking
-    if not panel.roic_rank.empty:
-        st.markdown("##### 📊 ROIC Ranking")
-        cols_roic = ["symbol", "companyName", "returnOnInvestedCapitalTTM", "evToEBITDATTM"]
-        roic_display = panel.roic_rank[[c for c in cols_roic if c in panel.roic_rank.columns]].head(15).copy()
-        for num_col in ["returnOnInvestedCapitalTTM", "evToEBITDATTM"]:
-            if num_col in roic_display.columns:
-                roic_display[num_col] = roic_display[num_col].round(3)
-        st.dataframe(roic_display, use_container_width=True, hide_index=True)
-
-    # ROIC stats
-    if panel.roic_stats:
-        st.markdown("##### Peer ROIC Statistics")
-        sc1, sc2, sc3, sc4 = st.columns(4)
-        stats = panel.roic_stats
-        with sc1:
-            st.metric("Median ROIC", f"{stats.get('roic_median', 0)*100:.1f}%")
-        with sc2:
-            st.metric("P75 ROIC", f"{stats.get('roic_p75', 0)*100:.1f}%")
-        with sc3:
-            st.metric("Min ROIC", f"{stats.get('roic_min', 0)*100:.1f}%")
-        with sc4:
-            st.metric("Max ROIC", f"{stats.get('roic_max', 0)*100:.1f}%")
-
-    st.divider()
-
-    # Sector verdict (Claude streaming)
-    st.markdown("#### Sector Verdict (Claude)")
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not anthropic_key:
-        st.warning("⚠️ ANTHROPIC_API_KEY not set — Claude verdict unavailable.")
-        return
-
-    try:
-        from modules.llm_anthropic import stream_sector_peers_dictamen
-
-        # Preparar CSV compactos para el LLM
-        vq_csv = ""
-        roic_csv = ""
-        stats_text = ""
-
-        if not panel.value_quality_rank.empty:
-            cols_llm = ["symbol", "evToEBITDATTM", "roic", "score"]
-            vq_sub = panel.value_quality_rank[[c for c in cols_llm if c in panel.value_quality_rank.columns]].head(10)
-            vq_csv = vq_sub.round(3).to_csv(index=False)
-
-        if not panel.roic_rank.empty:
-            cols_llm2 = ["symbol", "returnOnInvestedCapitalTTM", "evToEBITDATTM"]
-            roic_sub = panel.roic_rank[[c for c in cols_llm2 if c in panel.roic_rank.columns]].head(10)
-            roic_csv = roic_sub.round(3).to_csv(index=False)
-
-        if panel.roic_stats:
-            s = panel.roic_stats
-            stats_text = (
-                f"median={s.get('roic_median',0)*100:.1f}%, "
-                f"p75={s.get('roic_p75',0)*100:.1f}%, "
-                f"min={s.get('roic_min',0)*100:.1f}%, "
-                f"max={s.get('roic_max',0)*100:.1f}%, "
-                f"n={int(s.get('n_ranked', 0))}"
-            )
-
-        placeholder = st.empty()
-        buffer = ""
-        for chunk in stream_sector_peers_dictamen(
-            symbol=ticker,
-            sector=sector,
-            industry=industry,
-            peers_limit=peers_limit,
-            value_quality_table_csv=vq_csv,
-            roic_table_csv=roic_csv,
-            stats_text=stats_text,
-            model=ANTHROPIC_MODEL,
-        ):
-            buffer += chunk
-            placeholder.markdown(buffer + "▌")
-        placeholder.markdown(buffer)
-    except Exception as e:
-        st.warning(f"Error en dictamen Claude: {e}")
-
-
-# ─────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────
 def main():
-    # Sidebar: ticker global usado por todos los tabs (cabecera).
-    # Los controles específicos de Densidades los agrega render_densidades
-    # debajo de este bloque, y el caption final se agrega al pie tras los tabs.
+    # Single-page MVP layout:
+    #   sidebar → header (ProbEdge wordmark) + Ticker input + company snapshot
+    #   main flow → render_densidades (hero banner + chart + heatmap toggle +
+    #                                   skew interpretation + methodology expander)
+    #             → divider
+    #             → render_empresa (company logo + facts + AI description)
+    #             → sidebar footer (data attribution)
+    #
+    # Tabs (Valuation / Financials / Sector) were removed during MVP cleanup
+    # — only Densities and Company remain, fused into one continuous scroll.
     with st.sidebar:
         st.markdown("## ProbEdge")
         global_ticker = st.text_input(
             "Ticker",
             value="SPY",
             key="global_ticker",
-            help="Ticker applied across all tabs (Densities, Company, Valuation, etc.)",
+            help="Ticker driving the chart and the company snapshot.",
         ).upper().strip()
 
         # Company name + short profile (FMP). Cached → only one call per ticker.
@@ -1372,44 +1008,22 @@ def main():
                         _desc_short = _desc
                     st.caption(_desc_short)
 
-    # Tabs
-    tab_dens, tab_emp, tab_val, tab_fin, tab_sec = st.tabs(
-        ["📊 Densities", "🏢 Company", "💰 Valuation", "📈 Financials", "🌐 Sector"]
-    )
+    # ── Densities section (hero banner + chart + heatmap toggle + skew + math) ──
+    try:
+        render_densidades(global_ticker)
+    except Exception as e:
+        st.error(f"Error rendering Densities: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
-    with tab_dens:
-        try:
-            render_densidades(global_ticker)
-        except Exception as e:
-            st.error(f"Error in Densities tab: {e}")
-            import traceback
-            st.code(traceback.format_exc())
+    # ── Company section (logo + facts + AI description), inlined below chart ──
+    st.divider()
+    try:
+        render_empresa(global_ticker)
+    except Exception as e:
+        st.error(f"Error rendering Company section: {e}")
 
-    with tab_emp:
-        try:
-            render_empresa(global_ticker)
-        except Exception as e:
-            st.error(f"Error in Company tab: {e}")
-
-    with tab_val:
-        try:
-            render_valuacion(global_ticker)
-        except Exception as e:
-            st.error(f"Error in Valuation tab: {e}")
-
-    with tab_fin:
-        try:
-            render_financieros(global_ticker)
-        except Exception as e:
-            st.error(f"Error in Financials tab: {e}")
-
-    with tab_sec:
-        try:
-            render_sectorial(global_ticker)
-        except Exception as e:
-            st.error(f"Error in Sector tab: {e}")
-
-    # Pie del sidebar (al final, debajo de los controles que agregan los tabs).
+    # Pie del sidebar (al final, después de toda la página principal).
     with st.sidebar:
         st.divider()
         st.caption("Data: FMP · tastytrade · Anthropic Claude")
