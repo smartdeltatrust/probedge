@@ -40,12 +40,12 @@ def stream_translate_and_summarize(
     max_words: int = 90,
 ) -> Generator[str, None, None]:
     """
-    Devuelve chunks de texto (delta) en streaming.
+    Returns streaming text deltas (chunks).
 
-    - Traduce y sintetiza a español (México)
-    - Un solo párrafo
-    - Máximo `max_words` palabras (instrucción al modelo)
-    - Sin em-dashes, sin viñetas, sin títulos
+    - Summarizes the company description in professional US financial English
+    - Single paragraph
+    - Up to `max_words` words
+    - No em-dashes, no bullets, no headers
     """
     english_text = (english_text or "").strip()
     if not english_text:
@@ -54,30 +54,29 @@ def stream_translate_and_summarize(
 
     client = get_anthropic_client()
     if client is None:
-        # Sin cliente, devolvemos vacío para que UI haga fallback.
+        # No client — return empty so the UI falls back gracefully.
         yield ""
         return
 
-    sector = (sector or "No especificado").strip() or "No especificado"
+    sector = (sector or "Unspecified").strip() or "Unspecified"
     model = (model or get_anthropic_model()).strip()
 
     system = (
-        "Eres un traductor y editor profesional de textos corporativos. "
-        "Escribes español de México, claro, natural y conciso, con vocabulario financiero sobrio. "
-        "Puedes usar ironía muy ligera, sarcasmo agresivo. "
-        "No uses em dashes, no uses viñetas, no uses títulos, entrega un solo párrafo. "
-        "No agregues texto antes ni después del párrafo. "
-        "No inventes información, si algo no está explícito en el texto fuente, no lo afirmes."
+        "You are a professional editor for institutional equity research. "
+        "Write in US financial English: clear, concise, sober Wall Street tone. "
+        "No em-dashes, no bullets, no headers — deliver a single paragraph. "
+        "Do not add text before or after the paragraph. "
+        "Do not invent information; if a fact is not explicit in the source text, do not assert it."
     )
 
     user = (
-        f"Traduce y sintetiza el siguiente texto en un solo párrafo de máximo {max_words} palabras. "
-        "Enfócate en el producto o servicio principal. "
-        "Menciona la monetización usando la frase exacta: "
-        "\"su fuente principal de ingresos proviene de:\". "
-        "Evita fechas, fundadores y afirmaciones no presentes en el texto. "
-        f"Cierra el párrafo indicando el sector del S&P 500: {sector}. "
-        "\n\nTEXTO:\n"
+        f"Summarize the following company description in a single paragraph of at most {max_words} words. "
+        "Focus on the core product or service. "
+        "Mention monetization using the exact phrase: "
+        "\"primary revenue source:\". "
+        "Avoid founding dates, founders, and claims not present in the source text. "
+        f"Close the paragraph by stating the S&P 500 sector: {sector}. "
+        "\n\nSOURCE TEXT:\n"
         f"{english_text}"
     )
 
@@ -244,44 +243,42 @@ def stream_valuation_from_multiples(
     )
 
     user_text = (
-        f"Con los datos disponibles, emite un dictamen de valoración para {symbol} usando SOLO la información dada.\n\n"
-        f"Datos (USD y múltiplos):\n"
+        f"Issue a valuation verdict on {symbol} using ONLY the data provided below.\n\n"
+        f"Data (USD and multiples):\n"
         f"marketCap: {fmt_usd(multiples.get('marketCap'))} USD\n"
         f"enterpriseValueTTM: {fmt_usd(multiples.get('enterpriseValueTTM'))} USD\n"
         f"evToSalesTTM: {fmt_ratio(multiples.get('evToSalesTTM'))}\n"
         f"evToOperatingCashFlowTTM: {fmt_ratio(multiples.get('evToOperatingCashFlowTTM'))}\n"
         f"evToFreeCashFlowTTM: {fmt_ratio(multiples.get('evToFreeCashFlowTTM'))}\n"
         f"evToEBITDATTM: {fmt_ratio(multiples.get('evToEBITDATTM'))}\n"
-        f"numeroDeGrahamTTM: {fmt_usd(multiples.get('grahamNumberTTM'))} USD por acción\n"
+        f"grahamNumberTTM: {fmt_usd(multiples.get('grahamNumberTTM'))} USD per share\n"
         f"grahamNetNetTTM: {fmt_usd(multiples.get('grahamNetNetTTM'))}\n\n"
         f"{quote_block}"
         f"{shares_block}"
-        "Prohibiciones estrictas: NO escribas títulos, NO uses Markdown (no #, no **, no *), "
-        "NO uses etiquetas como 'Veredicto:' o 'Conclusión:'. No escribas una línea introductoria tipo 'Valuación por múltiplos'. "
-        "La primera letra de tu respuesta debe ser parte de la primera oración.\n\n"
-        "Formato obligatorio para móvil: escribe EXACTAMENTE 4 párrafos, separados por una línea en blanco (dos saltos de línea \\n\\n). "
-        "Cada párrafo debe tener 1 o 2 oraciones, y cada oración debe ser corta pero con la idea principal completa y explicativa.\n\n"
-        "Reglas de inferencia: no inventes comparables ni promedios sectoriales. Si el precioActualUSD es N/D, omítelo en el análisis, pero si está presente NO lo pidas.\n\n"
-        "Contenido por párrafo (no copies etiquetas):\n"
-        "Párrafo 1: dictamen (sobrevaluada o subvaluada) y confianza (alta, media o baja) Una exageración de buen gusto con expresión whitexican.\n"
-        "Párrafo 2: EV/Ventas (El Valor de la Empresa respecto de las Ventas, EV/Ventas) y EV/EBITDA "
-        "(El Valor de la Empresa respecto de sus utilidades antes de impuestos, depreciación y amortización, EV/EBITDA), "
-        "qué descuentan sobre crecimiento y márgenes, con reformulación cotidiana mexicana.\n"
-        "Párrafo 3: Número de Graham, usa primaVsNumeroDeGrahamPct (si no es N/D) para decir prima o descuento y contrasta con visión moderna, sin anglicanismos.\n"
-        "Párrafo 4: Dictamen del análisis con una implicación práctica y una exageración con buen humor que permita elevar la confianza (industria, guidance o crecimiento esperado).\n\n"
-        "Estilo: español mexicano, profesional y eficiente, humor irónico elegante y sobrio, máximo dos comparaciones cotidianas en toda la respuesta, "
-        "evita la arrogancia.\n\n"
-        f"Restricciones finales: máximo {max_chars} caracteres. No uses emojis ni caracteres especiales. No uses el símbolo de $, escribe USD."
+        "Strict prohibitions: do NOT write headers, do NOT use Markdown (no #, no **, no *), "
+        "do NOT use tags like 'Verdict:' or 'Conclusion:'. Do not write any introductory line like 'Valuation by multiples'. "
+        "The first letter of your response must be part of the first sentence.\n\n"
+        "Required format for mobile: write EXACTLY 4 paragraphs, separated by a blank line (two newlines \\n\\n). "
+        "Each paragraph must have 1 or 2 sentences, short but each containing the full main idea.\n\n"
+        "Inference rules: do not invent peer comparables or sector averages. If currentPriceUSD is N/A, omit it from the analysis; if present, DO NOT ask for it.\n\n"
+        "Content per paragraph (do not copy labels):\n"
+        "Paragraph 1: verdict (overvalued or undervalued) and confidence (high, medium or low).\n"
+        "Paragraph 2: EV/Sales and EV/EBITDA — what they imply about growth and margins.\n"
+        "Paragraph 3: Graham Number — use primaVsNumeroDeGrahamPct (if not N/A) to state premium or discount and contrast with modern intrinsic-value framework.\n"
+        "Paragraph 4: closing verdict with one practical implication tied to industry, guidance, or expected growth.\n\n"
+        "Style: sober, professional US financial English. Wall Street institutional tone. No cultural references, no humor, no idioms. "
+        "Concise, disciplined, data-driven.\n\n"
+        f"Final constraints: max {max_chars} characters. No emojis or special characters. Do not use the $ symbol — write USD."
     )
 
     system = (
-        "Eres un analista financiero con certificación CFA, 10+ años valuando empresas públicas. "
-        "Priorizas claridad, disciplina de datos y consistencia lógica. "
-        "Usas solo la información proporcionada, no inventas cifras ni rangos de industria. "
-        "Si se provee precioActualUSD lo usas para interpretar el Número de Graham y no lo solicitas. "
-        "Si se proveen datos de shares-float (outstandingShares, floatShares, freeFloat), los interpretas cualitativamente "
-        "sin inventar umbrales de industria ni comparables. "
-        "Respondes en texto plano, con párrafos, sin títulos, sin Markdown."
+        "You are a CFA-charterholder equity analyst with 10+ years of experience valuing public companies. "
+        "You prioritize clarity, data discipline, and logical consistency. "
+        "You use only the information provided; you do not invent figures or industry ranges. "
+        "If currentPriceUSD is provided, you use it to interpret the Graham Number and you do not request it. "
+        "If shares-float data is provided (outstandingShares, floatShares, freeFloat), you interpret it qualitatively "
+        "without inventing industry thresholds or comparables. "
+        "You write in professional US financial English, plain text, paragraphs only, no headers, no Markdown."
     )
 
     emitted = 0
@@ -354,7 +351,7 @@ def stream_returns_analysis(
             return str(v)
 
     user_text = (
-        f"Analiza la rentabilidad y retornos de {symbol} usando estas métricas TTM:\n\n"
+        f"Analyze profitability and returns for {symbol} using the following TTM metrics:\n\n"
         f"returnOnAssetsTTM: {fmt_pct(returns.get('returnOnAssetsTTM'))}\n"
         f"returnOnEquityTTM: {fmt_pct(returns.get('returnOnEquityTTM'))}\n"
         f"returnOnTangibleAssetsTTM: {fmt_pct(returns.get('returnOnTangibleAssetsTTM'))}\n"
@@ -363,21 +360,23 @@ def stream_returns_analysis(
         f"operatingReturnOnAssetsTTM: {fmt_pct(returns.get('operatingReturnOnAssetsTTM'))}\n"
         f"earningsYieldTTM: {fmt_pct(returns.get('earningsYieldTTM'))}\n"
         f"freeCashFlowYieldTTM: {fmt_pct(returns.get('freeCashFlowYieldTTM'))}\n\n"
-        "Explica qué dicen estos retornos sobre eficiencia operativa, capacidad de reinversión y calidad del retorno. "
-        "Señala consistencias o banderas rojas o verdes respecto de los números, por ejemplo ROE muy elevado frente a ROA, y explica en términos simples qué podría implicar "
-        "En términos de apalancamiento o base de capital, sin inventar datos, explica de manera simple los indicadores en español, por ejemplo ROA (Return on Assets)  Retorno sobre los activos \n\n"
-        "Después de cada explicación técnica reformula la idea para que la entienda cualquier persona con un lenguaje práctico que hasta un niño de 12 años con ejemplos simples lo pueda entender, puedes usar exageraciones con humor fino y elegante."
-        "Sin sonar condescendiente, ni mencionar que tu conclusión es para alguien con entendimiento menor,  evita poner frases como: Conclusión para un niño de doce años; sé empático y redacta tu conclusión en el último párrafo de forma simple y contundente"
-        f"Limita tu respuesta a {max_chars} caracteres, no uses bullets, tablas, títulos o subtítulos, evita emojis y caracteres especiales."
+        "Explain what these returns reveal about operating efficiency, reinvestment capacity, and quality of return. "
+        "Flag consistencies, red flags, or green flags — for example, ROE materially above ROA — and explain what that may imply "
+        "in terms of leverage or capital base, using only the data provided. Briefly clarify each acronym on first use "
+        "(e.g., ROA = Return on Assets).\n\n"
+        "Tone: sober, professional US financial English. Wall Street institutional voice. "
+        "No humor, no cultural references, no idioms, no condescension. "
+        "Close with a concise, decisive paragraph that synthesizes the picture.\n\n"
+        f"Constraints: max {max_chars} characters. No bullets, tables, headers, or subheaders. No emojis or special characters."
     )
 
     system = (
-        "Asume el rol de un analista financiero con certificación CFA y más de 10 años de experiencia. "
-        "Escribe en español profesional y claro. "
-        "Conecta métricas relacionadas (ROA vs ROE, ROIC/ROCE, operating ROA, yields). "
-        "No inventes comparables ni promedios industriales, si no se te proporcionan. Usa exclusivamente los datos presentados"
-        "Si una métrica es extrema, explica por qué puede ocurrir y qué datos adicionales se necesitarían para confirmarlo."
-        "Asume la personalidad de un Whitexican con CFA nivel 3 que estudió en una Universidad de primer nivel, pero sé empático y agradable con tu sentido del humor"
+        "You are a CFA-charterholder equity analyst with 10+ years of experience. "
+        "Write in clear, professional US financial English. "
+        "Connect related metrics (ROA vs ROE, ROIC/ROCE, operating ROA, yields). "
+        "Do not invent peer comparables or industry averages if they are not provided. Use only the data presented. "
+        "If a metric is extreme, explain why it may occur and what additional data would be needed to confirm. "
+        "Tone is sober institutional Wall Street: no cultural references, no humor, no idioms."
     )
 
     try:
@@ -446,26 +445,27 @@ def stream_income_growth_analysis(
         )
 
     user_text = (
-        f"Analiza el crecimiento del estado de resultados de {symbol} (Income Statement Growth). "
-        "Usa las métricas de crecimiento para evaluar salud operativa, calidad del crecimiento y posibles tensiones. "
-        "No inventes comparables ni promedios industriales, limita el análisis a lo provisto.\n\n"
-        "Último periodo (agrupado):\n"
+        f"Analyze the income statement growth profile of {symbol}. "
+        "Use the growth metrics to assess operating health, quality of growth, and possible stress points. "
+        "Do not invent peer comparables or industry averages; limit the analysis strictly to the data provided.\n\n"
+        "Latest period (grouped):\n"
         + "\n".join(latest_lines)
-        + "\n\nTendencia (últimos periodos):\n"
+        + "\n\nTrend (recent periods):\n"
         + "\n".join(trend_lines)
         + "\n\n"
-        "Explica coherencias e inconsistencias, por ejemplo crecimiento de ingresos vs crecimiento de utilidad operativa, "
-        "utilidad neta y EPS, además del impacto de impuestos y otros componentes como el costo del financiamiento y el impacto de las tasas de interés."
-        "Después de cada explicación técnica reformula la idea para que la entienda cualquier persona con un lenguaje práctico que hasta un niño de 12 años lo pueda entender con ejemplos simples y exageraciones con humor fino y elegante."
-        "Sin sonar condescendiente, ni mencionar que tu conclusión es para alguien con entendimiento limitado; evita poner frases como: Conclusión para un niño de doce años. Sé empático y redacta tu conclusión en el último párrafo de forma simple, contundente y fácil de entender"
-        f"Limita tu respuesta a {max_chars} caracteres, no uses bullets, tablas, NO títulos o subtítulos, evita emojis y caracteres especiales."
+        "Explain consistencies and inconsistencies — for example, revenue growth vs operating income growth, "
+        "net income, EPS, and the impact of taxes and other line items such as financing costs and interest rate sensitivity.\n\n"
+        "Tone: sober, professional US financial English. Institutional Wall Street voice. "
+        "No humor, no idioms, no cultural references. Close with a concise, decisive synthesis paragraph.\n\n"
+        f"Constraints: max {max_chars} characters. No bullets, tables, headers, or subheaders. No emojis or special characters."
     )
 
     system = (
-        "Asume el rol de un analista financiero CFA con más de 10 años. "
-        "Enfócate en crecimiento, calidad de utilidades, apalancamiento operativo y consistencia entre líneas del estado de resultados."
-        "Si detectas valores extremos como -1 o 1 en variables de interés o gasto, trátalos como posibles placeholders, outliers o no reportado, "
-        "y dilo explícitamente en vez de inventar una interpretación precisa."
+        "You are a CFA-charterholder equity analyst with 10+ years of experience. "
+        "Focus on growth, quality of earnings, operating leverage, and consistency across income statement lines. "
+        "If you detect extreme sentinel values such as -1 or 1 in interest or expense fields, treat them as possible placeholders, "
+        "outliers, or not-reported, and say so explicitly rather than invent a precise interpretation. "
+        "Write in professional US financial English."
     )
 
     try:
@@ -532,7 +532,7 @@ def stream_operating_profitability_growth_analysis(
 
     latest_lines: List[str] = []
     for k, v in (operating_group_latest or {}).items():
-        flag = " (posible sentinel)" if is_sentinel(v) else ""
+        flag = " (possible sentinel)" if is_sentinel(v) else ""
         latest_lines.append(f"{k}: {fmt_pct(v)}{flag}")
 
     trend_lines: List[str] = []
@@ -548,25 +548,27 @@ def stream_operating_profitability_growth_analysis(
         )
 
     system = (
-        "Eres un analista financiero con certificación CFA y más de 10 años de experiencia. "
-        "Tu objetivo es evaluar la rentabilidad operativa y la eficiencia de costos a partir de tasas de crecimiento del estado de resultados. "
-        "No inventes comparables ni promedios industriales. No inventes causas específicas (productos, mercados, eventos) si no hay evidencia en los datos. "
-        "Si detectas valores sentinel como -1 o 1, trátalos como posible dato no reportado, placeholder o outlier, y explica la limitación."
+        "You are a CFA-charterholder equity analyst with 10+ years of experience. "
+        "Your objective is to assess operating profitability and cost efficiency from income-statement growth rates. "
+        "Do not invent peer comparables or industry averages. Do not invent specific causes (products, markets, events) absent direct evidence in the data. "
+        "If you detect sentinel values such as -1 or 1, treat them as potentially not-reported, placeholder, or outlier values, and state the limitation explicitly. "
+        "Write in professional US financial English, institutional Wall Street tone."
     )
 
     user = (
-        f"Analiza la rentabilidad operativa de {symbol} usando únicamente estos datos de crecimiento TTM/FY (Income Statement Growth). "
-        "Enfócate en dos ideas: eficiencia del gasto operativo e impulso de rentabilidad operativa.\n\n"
-        "Datos del último periodo (grupo compacto B+C):\n"
+        f"Analyze operating profitability for {symbol} using ONLY these TTM/FY growth metrics (Income Statement Growth). "
+        "Focus on two ideas: operating-expense efficiency and operating-profitability momentum.\n\n"
+        "Latest period (compact B+C group):\n"
         + "\n".join(latest_lines)
-        + "\n\nTendencia reciente (para consistencia):\n"
+        + "\n\nRecent trend (for consistency check):\n"
         + "\n".join(trend_lines)
         + "\n\n"
-        "Entrega un análisis en español profesional y claro, sin títulos ni subtítulos, sin bullets, sin tablas ni headers introductorios. "
-        "No utilices caracteres especiales, evita el uso del signo $ y en cambio usa USD, no uses emojis, ni listas, ni bullets, ni tablas"
-        "Después de cada explicación reformula la idea principal para que la pueda entender hasta una persona con la capacidad cognitiva de un joven de 12 años con un ejemplo simple lo pueda entender, Pero sin que el lector se de cuenta que le estás hablando con menor carga cognitiva. Por ejemplo no uses frases como: \"Para un Joven de 12 años\", ni \"Para un niño de 12 años\""
-        "Si hay contradicciones (por ejemplo gastos creciendo más rápido que operating income), descríbelas. Si hace falta un dato, no alucines ni inventes información; sugiere qué dato faltaría para confirmar (sin pedirlo al usuario)."
-        f"Limita tu respuesta a {max_chars} caracteres."
+        "Deliver the analysis in clear, professional US financial English. No headers, no subheaders, no bullets, no tables, no introductory headers. "
+        "Do not use special characters. Avoid the $ symbol — use USD. No emojis, lists, bullets, or tables. "
+        "Tone: sober institutional Wall Street voice. No humor, no idioms, no cultural references. "
+        "If you find contradictions (e.g., expenses growing faster than operating income), describe them. "
+        "If data is missing, do not hallucinate; suggest what additional data would be needed for confirmation (without requesting it from the user). "
+        f"Constraint: maximum {max_chars} characters."
     )
 
     try:
@@ -598,12 +600,12 @@ def stream_stock_news_summary(
     max_chars: int = 1200,
 ):
     """
-    Devuelve chunks (delta) en streaming con un resumen conciso de noticias.
-    Formato de salida:
-    - Español claro (México)
-    - Sin viñetas, sin tablas, sin títulos
-    - 1 solo bloque de texto, máximo aprox `max_chars`
-    - No inventar, no “completar contexto” externo
+    Returns streaming text deltas with a concise news summary.
+    Output format:
+    - Professional US financial English
+    - No bullets, no tables, no headers
+    - Single continuous text block, up to ~max_chars
+    - No invention, no external context-filling
     """
     symbol = (symbol or "").strip().upper()
     news_payload = (news_payload or "").strip()
@@ -619,19 +621,19 @@ def stream_stock_news_summary(
     model = (model or get_anthropic_model()).strip()
 
     system = (
-        "Asume el rol de un analista financiero con certificación CFA y más de 10 años de experiencia. "
-        "Tu tarea es sintetizar noticias bursátiles con rigor, neutralidad y sin sensacionalismo. "
-        "No inventes hechos, si una noticia no trae detalles, dilo con cautela. "
-        "Escribe español de México, profesional y claro. "
-        "No uses em dashes, no uses viñetas, no uses tablas, no uses títulos."
+        "You are a CFA-charterholder equity analyst with 10+ years of experience. "
+        "Your task is to synthesize equity news with rigor, neutrality, and no sensationalism. "
+        "Do not invent facts. If a headline lacks detail, say so with caution. "
+        "Write in professional US financial English. Institutional Wall Street tone. "
+        "No em-dashes, no bullets, no tables, no headers."
     )
 
     user = (
-        f"Resume las 20 noticias más recientes relacionadas con {symbol}. "
-        "Prioriza lo material para valuación y riesgo (earnings, guidance, regulación, demanda, márgenes, cadena de suministro, litigios). "
-        f"Entrega un solo texto corrido, máximo {max_chars} caracteres. "
-        "Incluye 1 frase final que indique el sesgo general del flujo de noticias (positivo, mixto, negativo) con cautela. "
-        "\n\nFUENTE (NO INVENTAR FUERA DE ESTO):\n"
+        f"Summarize the most recent news items related to {symbol}. "
+        "Prioritize what is material to valuation and risk (earnings, guidance, regulation, demand, margins, supply chain, litigation). "
+        f"Deliver a single continuous paragraph, max {max_chars} characters. "
+        "End with one cautious sentence stating the overall tilt of the news flow (positive, mixed, negative). "
+        "\n\nSOURCE (DO NOT GO BEYOND THIS):\n"
         f"{news_payload}"
     )
 
@@ -663,8 +665,8 @@ def stream_grades_actions_analysis(
     temperature: float = 0.5,
 ):
     """
-    Genera interpretación de tendencias de calificaciones usando un payload estructurado.
-    Devuelve un stream de texto (deltas), igual que tus otras funciones.
+    Interprets rating-action trends using a structured payload.
+    Returns a streaming text generator, same as the other functions.
     """
     client = get_anthropic_client()
     if client is None:
@@ -674,24 +676,25 @@ def stream_grades_actions_analysis(
     sym = (symbol or "").strip().upper()
 
     system_prompt = (
-        "Eres un analista financiero profesional. "
-        "Tu tarea es interpretar cambios de calificaciones de analistas usando SOLO el payload provisto. "
-        "No inventes datos, no asumas eventos fuera de la tabla. "
-        "Da señales claras de tendencia, intensidad y posibles cambios de sentimiento. "
-        "Si el payload no muestra evidencia suficiente, dilo explícitamente."
+        "You are a professional equity analyst. "
+        "Your task is to interpret analyst rating actions using ONLY the payload provided. "
+        "Do not invent data; do not assume events outside the table. "
+        "Provide clear signals on trend, intensity, and potential shifts in sentiment. "
+        "If the payload does not show sufficient evidence, say so explicitly. "
+        "Write in professional US financial English."
     )
 
     user_prompt = (
         f"Ticker: {sym}\n\n"
-        "Tienes un historial reciente de acciones de calificación (últimos eventos). "
-        "Analiza tendencias y patrones en:\n"
-        "1) Distribución de acciones (upgrade, downgrade, maintain u otras)\n"
-        "2) Evidencia de cambios reales de rating (previousGrade != newGrade)\n"
-        "3) Concentración por firmas (si una o pocas dominan)\n"
-        "4) Cambios recientes relevantes (últimos 5 eventos) y qué sugieren\n\n"
+        "You have a recent history of rating actions (latest events). "
+        "Analyze trends and patterns across:\n"
+        "1) Distribution of actions (upgrade, downgrade, maintain, other)\n"
+        "2) Evidence of real rating changes (previousGrade != newGrade)\n"
+        "3) Firm concentration (whether one or few firms dominate)\n"
+        "4) Recent relevant changes (last 5 events) and what they suggest\n\n"
         "Payload:\n"
         f"{insights}\n\n"
-        "Entrega el análisis en español, en un tono sobrio, y en 8 a 12 líneas máximo."
+        "Deliver the analysis in US financial English, sober institutional tone, 8 to 12 lines maximum."
     )
 
     try:
@@ -732,24 +735,25 @@ def stream_sector_peers_dictamen(
     model = (model or get_anthropic_model()).strip()
 
     system = (
-        "Eres un analista financiero con certificación CFA. "
-        "Usas exclusivamente los datos provistos, no inventas, no completas faltantes. "
-        "Si falta un dato, lo dices explícitamente. "
-        "Español profesional, sin em dashes, sin viñetas, sin títulos, sin Markdown, sin emojis. "
-        "No uses el símbolo $, usa USD."
+        "You are a CFA-charterholder equity analyst. "
+        "You use exclusively the data provided; you do not invent or fill in missing values. "
+        "If data is missing, you state so explicitly. "
+        "Write in professional US financial English, sober institutional Wall Street tone. "
+        "No em-dashes, no bullets, no headers, no Markdown, no emojis. "
+        "Do not use the $ symbol — write USD."
     )
 
     user = (
-        f"Análisis sectorial para {sym}. Sector: {sector}. Industria: {industry}. Set objetivo: {peers_limit}.\n\n"
-        f"Estadísticos ROIC del set:\n{stats_text}\n\n"
-        "Tabla 1 (Value-Quality, score mayor es mejor):\n"
+        f"Sector analysis for {sym}. Sector: {sector}. Industry: {industry}. Target peer set: {peers_limit}.\n\n"
+        f"Peer ROIC statistics:\n{stats_text}\n\n"
+        "Table 1 (Value-Quality, higher score = better):\n"
         f"{value_quality_table_csv}\n\n"
-        "Tabla 2 (Ranking ROIC, ROIC mayor es mejor):\n"
+        "Table 2 (ROIC Ranking, higher ROIC = better):\n"
         f"{roic_table_csv}\n\n"
-        "Formato obligatorio: exactamente 4 párrafos, separados por una línea en blanco, 1 o 2 oraciones por párrafo. "
-        "Sin listas. Párrafo 1 diagnóstico del set. Párrafo 2 lectura EV/EBITDA vs ROIC y balance. "
-        "Párrafo 3 Top 5 y 2 alternativas con tickers. Párrafo 4 advertencias y una implicación práctica. "
-        f"Máximo {max_chars} caracteres."
+        "Required format: exactly 4 paragraphs, separated by a blank line, 1 or 2 sentences per paragraph. "
+        "No lists. Paragraph 1: diagnostic of the peer set. Paragraph 2: read EV/EBITDA vs ROIC balance. "
+        "Paragraph 3: Top 5 names and 2 alternatives with tickers. Paragraph 4: caveats and one practical implication. "
+        f"Maximum {max_chars} characters."
     )
 
     emitted = 0
@@ -795,8 +799,9 @@ def stream_sector_peers_dictamen(
     max_chars: int = 1400,
 ) -> Generator[str, None, None]:
     """
-    Dictamen sectorial en streaming (estricto, sin inventar).
-    Entrega texto en español, sobrio, sin em dashes, sin listas, sin títulos.
+    Streaming sector verdict (strict, no invention).
+    Delivers professional US financial English text, sober institutional tone,
+    no em-dashes, no lists, no headers.
     """
     client = get_anthropic_client()
     if client is None:
@@ -807,26 +812,27 @@ def stream_sector_peers_dictamen(
     model = (model or get_anthropic_model()).strip()
 
     system = (
-        "Eres un analista financiero con certificación CFA, riguroso. "
-        "Usas exclusivamente los datos provistos. "
-        "Si falta un dato para concluir, lo dices explícitamente. "
-        "No inventas comparables, no inventas promedios sectoriales, no asumes causalidad. "
-        "Escribes español profesional, sobrio, sin em dashes, sin viñetas, sin títulos, sin Markdown, sin emojis. "
-        "No uses el símbolo $, usa USD."
+        "You are a rigorous CFA-charterholder equity analyst. "
+        "You use exclusively the data provided. "
+        "If data is missing to conclude, you say so explicitly. "
+        "You do not invent peer comparables, you do not invent sector averages, you do not assume causality. "
+        "Write in professional US financial English, sober institutional Wall Street tone. "
+        "No em-dashes, no bullets, no headers, no Markdown, no emojis. "
+        "Do not use the $ symbol — write USD."
     )
 
     user = (
-        f"Análisis sectorial para {sym}. Sector: {sector}. Industria: {industry}. Set objetivo: {peers_limit}.\n\n"
-        "Usa SOLO el contenido siguiente. No inventes.\n\n"
-        f"Estadísticos (ROIC):\n{stats_text}\n\n"
-        "Tabla 1 (Value-Quality, score mayor es mejor):\n"
+        f"Sector analysis for {sym}. Sector: {sector}. Industry: {industry}. Target peer set: {peers_limit}.\n\n"
+        "Use ONLY the content below. Do not invent.\n\n"
+        f"ROIC statistics:\n{stats_text}\n\n"
+        "Table 1 (Value-Quality, higher score = better):\n"
         f"{value_quality_table_csv}\n\n"
-        "Tabla 2 (Ranking ROIC, ROIC mayor es mejor):\n"
+        "Table 2 (ROIC Ranking, higher ROIC = better):\n"
         f"{roic_table_csv}\n\n"
-        "Formato obligatorio: exactamente 4 párrafos, separados por una línea en blanco, 1 o 2 oraciones por párrafo. "
-        "Sin listas. Párrafo 1 diagnóstico del set. Párrafo 2 lectura EV/EBITDA vs ROIC y balance. "
-        "Párrafo 3 Top 5 y 2 alternativas con tickers. Párrafo 4 advertencias y una implicación práctica. "
-        f"Máximo {max_chars} caracteres."
+        "Required format: exactly 4 paragraphs, separated by a blank line, 1 or 2 sentences per paragraph. "
+        "No lists. Paragraph 1: diagnostic of the peer set. Paragraph 2: read EV/EBITDA vs ROIC balance. "
+        "Paragraph 3: Top 5 names and 2 alternatives with tickers. Paragraph 4: caveats and one practical implication. "
+        f"Maximum {max_chars} characters."
     )
 
     emitted = 0
@@ -888,26 +894,27 @@ def stream_sector_peers_dictamen(
     model = (model or get_anthropic_model()).strip()
 
     system = (
-        "Eres un analista financiero con certificación CFA, riguroso. "
-        "Usas exclusivamente los datos provistos. "
-        "Si falta un dato, lo dices explícitamente. "
-        "No inventas comparables, no inventas promedios sectoriales, no asumes causalidad. "
-        "Escribes español profesional, sobrio, sin em dashes, sin viñetas, sin títulos, sin Markdown, sin emojis. "
-        "No uses el símbolo $, usa USD."
+        "You are a rigorous CFA-charterholder equity analyst. "
+        "You use exclusively the data provided. "
+        "If data is missing, you state so explicitly. "
+        "You do not invent peer comparables, you do not invent sector averages, you do not assume causality. "
+        "Write in professional US financial English, sober institutional Wall Street tone. "
+        "No em-dashes, no bullets, no headers, no Markdown, no emojis. "
+        "Do not use the $ symbol — write USD."
     )
 
     user = (
-        f"Análisis sectorial para {sym}. Sector: {sector}. Industria: {industry}. Set objetivo: {peers_limit}.\n\n"
-        "Usa SOLO el contenido siguiente. No inventes.\n\n"
-        f"Estadísticos (ROIC):\n{stats_text}\n\n"
-        "Tabla 1 (Value-Quality, score mayor es mejor):\n"
+        f"Sector analysis for {sym}. Sector: {sector}. Industry: {industry}. Target peer set: {peers_limit}.\n\n"
+        "Use ONLY the content below. Do not invent.\n\n"
+        f"ROIC statistics:\n{stats_text}\n\n"
+        "Table 1 (Value-Quality, higher score = better):\n"
         f"{value_quality_table_csv}\n\n"
-        "Tabla 2 (Ranking ROIC, ROIC mayor es mejor):\n"
+        "Table 2 (ROIC Ranking, higher ROIC = better):\n"
         f"{roic_table_csv}\n\n"
-        "Formato obligatorio: exactamente 4 párrafos, separados por una línea en blanco, 1 o 2 oraciones por párrafo. "
-        "Sin listas. Párrafo 1 diagnóstico del set. Párrafo 2 lectura EV/EBITDA vs ROIC y balance. "
-        "Párrafo 3 Top 5 y 2 alternativas con tickers. Párrafo 4 advertencias y una implicación práctica. "
-        f"Máximo {max_chars} caracteres."
+        "Required format: exactly 4 paragraphs, separated by a blank line, 1 or 2 sentences per paragraph. "
+        "No lists. Paragraph 1: diagnostic of the peer set. Paragraph 2: read EV/EBITDA vs ROIC balance. "
+        "Paragraph 3: Top 5 names and 2 alternatives with tickers. Paragraph 4: caveats and one practical implication. "
+        f"Maximum {max_chars} characters."
     )
 
     emitted = 0

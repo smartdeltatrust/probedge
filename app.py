@@ -1,5 +1,5 @@
 # app.py — ProbEdge Unified App
-# Tabs: 📊 Densidades | 🏢 Empresa | 💰 Valuación | 📈 Financieros | 🌐 Sectorial
+# Tabs: 📊 Densities | 🏢 Company | 💰 Valuation | 📈 Financials | 🌐 Sector
 from __future__ import annotations
 
 import sys
@@ -33,8 +33,13 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Favicon SVG path. Resolved relative to app.py so it works both locally and
+# on Render regardless of CWD. Streamlit accepts SVG paths since v1.30+.
+ICON_PATH = ROOT / "assets" / "icon.svg"
+
 st.set_page_config(
-    page_title="ProbEdge — Análisis de Mercados",
+    page_title="ProbEdge — Markets Analytics",
+    page_icon=str(ICON_PATH) if ICON_PATH.exists() else "📊",
     layout="wide",
 )
 
@@ -280,15 +285,15 @@ def _stream_skew_interpretation(payload_json: str, model: str):
     import os as _os
     from modules.llm_anthropic import get_anthropic_client, Anthropic as _Anthropic
     if _Anthropic is None:
-        yield ("⚠️ Paquete 'anthropic' no instalado en este entorno. "
-               "Agregá `anthropic>=0.40` a requirements.txt y redeployá.")
+        yield ("⚠️ 'anthropic' package not installed in this environment. "
+               "Add `anthropic>=0.40` to requirements.txt and redeploy.")
         return
     if not (_os.getenv("ANTHROPIC_API_KEY") or "").strip():
-        yield "⚠️ ANTHROPIC_API_KEY no configurada en este entorno."
+        yield "⚠️ ANTHROPIC_API_KEY not set in this environment."
         return
     client = get_anthropic_client()
     if client is None:
-        yield "⚠️ Cliente Anthropic no disponible (causa desconocida)."
+        yield "⚠️ Anthropic client unavailable (unknown cause)."
         return
     p = _json.loads(payload_json)
 
@@ -457,8 +462,8 @@ def _check_paywall():
 # TAB: DENSIDADES
 # ─────────────────────────────────────────────
 def render_densidades(ticker: str):
-    st.subheader("Risk-Neutral Density Probabilities from Options Prices")
-
+    # Hero banner rendered later (just above the chart) replaces the old
+    # st.subheader title — same message, branded layout with the icon.
     if not _check_paywall():
         st.stop()
 
@@ -473,21 +478,21 @@ def render_densidades(ticker: str):
         def _ck(k: str) -> str:
             return "✅" if _os.environ.get(k) else "❌"
         st.error(
-            "⚠️ No se pudo conectar con tastytrade.\n\n"
+            "⚠️ Could not connect to tastytrade.\n\n"
             f"OAuth Personal Grant: "
             f"CLIENT_ID {_ck('TASTYTRADE_CLIENT_ID')} | "
             f"CLIENT_SECRET {_ck('TASTYTRADE_CLIENT_SECRET')} | "
             f"REFRESH_TOKEN {_ck('TASTYTRADE_REFRESH_TOKEN')}\n\n"
-            f"Si los 3 están en ✅, el grant probablemente fue revocado en "
-            f"my.tastytrade.com → Manage → API Access. Generá uno nuevo y "
-            f"actualizá el secret en Render.\n\n"
+            f"If all three show ✅, the grant was likely revoked at "
+            f"my.tastytrade.com → Manage → API Access. Generate a new one and "
+            f"update the secret in Render.\n\n"
             f"Error: {_tt_err}"
         )
         st.stop()
 
     with st.sidebar:
         st.divider()
-        st.caption("Densidades")
+        st.caption("Densities")
 
         range_code = st.selectbox(
             "Historical range",
@@ -570,7 +575,12 @@ def render_densidades(ticker: str):
         # Dividend yield (q) eliminado del UI — se asume 0 por simplicidad.
         q_rate = 0.0
 
-        show_heatmap = st.checkbox("Show density heatmap", value=False, key="chk_density_heatmap")
+    # Density heatmap toggle now lives centered BELOW the chart — see the
+    # `st.toggle` block after plot_main_figure. We read its current value here
+    # so the chart renders with the right overlay on every rerun.
+    if "chk_density_heatmap" not in st.session_state:
+        st.session_state["chk_density_heatmap"] = False
+    show_heatmap = st.session_state["chk_density_heatmap"]
 
     hist_sigma_rel = float(settings.HIST_SIGMA_REL)
     st.caption("Data: tastytrade (options · real-time) · FMP (historical OHLCV)")
@@ -661,11 +671,115 @@ def render_densidades(ticker: str):
         if pd.Timestamp(min_date) <= pd.Timestamp(d) <= pd.Timestamp(max_date)
     ]
 
+    # ─── Hero banner ───────────────────────────────────────────────────────
+    # Renders inline above the chart: the brand icon (cone of probability)
+    # on the left and the wordmark + tagline on the right. The icon SVG is
+    # embedded literally (not via st.image) so that strokes/gradients render
+    # at full quality without raster downsampling, and so the visual loads
+    # in the same DOM pass as the rest of the page (no flicker).
+    #
+    # IMPORTANT: we strip the XML declaration and any pre-SVG comments from
+    # the file before injecting into st.markdown. The browser's HTML parser
+    # treats `<?xml ... ?>` as a "bogus comment" and bleeds the surrounding
+    # text into the visible DOM — that produced the broken sidebar columns
+    # in the first attempt. Pulling just the `<svg>...</svg>` element is the
+    # safe form.
+    # Build the icon as a base64-encoded data URI inside an <img> tag.
+    # Inline <svg> embedding inside Streamlit's markdown container was
+    # producing collapsed-to-zero icons because of flex-sizing dependency
+    # loops between the SVG's viewBox and its parent's intrinsic width.
+    # A data URI <img> sidesteps all of that — the browser treats it as a
+    # replaced element with fixed dimensions, exactly like a PNG would
+    # behave. Reliable across every browser and Streamlit version.
+    import base64 as _base64
+    import re as _re
+    try:
+        _raw_svg = ICON_PATH.read_text(encoding="utf-8")
+        _svg_match = _re.search(r"<svg\b.*?</svg>", _raw_svg, _re.DOTALL | _re.IGNORECASE)
+        _svg_only = _svg_match.group(0) if _svg_match else ""
+        _icon_data_uri = (
+            "data:image/svg+xml;base64,"
+            + _base64.b64encode(_svg_only.encode("utf-8")).decode("ascii")
+        ) if _svg_only else ""
+    except Exception:
+        _icon_data_uri = ""
+    if _icon_data_uri:
+        st.markdown(
+            f"""
+            <div style="
+                display: flex;
+                align-items: center;
+                gap: 22px;
+                padding: 18px 24px;
+                margin: 4px 0 18px 0;
+                border-radius: 10px;
+                background: linear-gradient(180deg, rgba(0,180,220,0.04) 0%, rgba(0,0,0,0.0) 100%);
+                border-left: 2px solid rgba(0, 180, 220, 0.35);
+            ">
+                <img src="{_icon_data_uri}" width="72" height="72" alt="ProbEdge"
+                     style="flex: 0 0 auto; display: block;"/>
+                <div style="flex: 1 1 auto; min-width: 0;">
+                    <div style="
+                        font-family: 'Inter', -apple-system, sans-serif;
+                        font-size: 28px;
+                        font-weight: 600;
+                        letter-spacing: -0.01em;
+                        line-height: 1.05;
+                        color: #f0fbff;
+                        margin: 0 0 6px 0;
+                    ">ProbEdge</div>
+                    <div style="
+                        font-family: 'Inter', -apple-system, sans-serif;
+                        font-size: 13px;
+                        font-weight: 400;
+                        letter-spacing: 0.01em;
+                        color: #8aa9b3;
+                        margin: 0;
+                    ">Risk-Neutral Density · Live from the option chain</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     plot_main_figure(
         quotes_df, dates_win, price_grid, density_win,
         expiry_dates=expiry_dates_win, valuation_date=valuation_date,
         show_heatmap=show_heatmap,
     )
+
+    # ─── Density heatmap toggle — centered, elegant, prominent ───
+    # The heatmap is the headline feature of the visualization (it's what
+    # makes the implied-density story visible), so the on/off switch lives
+    # right under the chart in its own bordered frame.
+    #
+    # Sizing strategy: we keep a moderately wide middle column so the toggle
+    # label never wraps, BUT we inject CSS that forces the bordered container
+    # to `width: fit-content` — that way the border hugs the toggle exactly,
+    # independent of viewport width / sidebar state. There is only one
+    # bordered container in the whole app, so a global selector is safe.
+    st.markdown(
+        """
+        <style>
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            width: fit-content !important;
+            max-width: 100% !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    _spacer_l, _toggle_col, _spacer_r = st.columns([1, 2, 1])
+    with _toggle_col:
+        with st.container(border=True):
+            st.toggle(
+                "Show density heatmap",
+                key="chk_density_heatmap",
+                help="Overlay the implied probability density as a color heatmap. "
+                     "Brighter colors = more probability mass concentrated at that price level on that date.",
+            )
 
     # ─── Skew interpretation via Claude (streaming typewriter) ───
     skew_payload = _compute_skew_payload(
@@ -745,34 +859,37 @@ and extreme scenarios, which makes this visualization especially useful to desig
 and understand how the market is pricing future uncertainty.
 """)
 
-    st.markdown(r"""
-### Mathematical summary of the methodology
-
+    # Methodology section is visually separated from the prose explanation:
+    # collapsed by default so readers who only want the visual picture aren't
+    # buried in formulas, but one click reveals the full Breeden–Litzenberger
+    # derivation for the quantitatively inclined.
+    with st.expander("Mathematical summary of the methodology", expanded=False):
+        st.markdown(r"""
 We start from the option chain and build *clean* call prices.
 If $C(K)$ is the call price and $P(K)$ the put price at the same strike $K$,
 with spot $S_0$, risk–free rate $r$ and dividend yield $q$, we use:
 """)
-    st.latex(r"""
+        st.latex(r"""
 C_{\text{clean}}(K) \approx
 \begin{cases}
 \dfrac{\text{bid} + \text{ask}}{2} & \text{if there is a valid spread} \\
 P(K) + S_0 e^{-qT} - K e^{-rT} & \text{(put–call parity)} \\
 \end{cases}
 """)
-    st.markdown(r"Then we remove discounting:")
-    st.latex(r"""
+        st.markdown(r"Then we remove discounting:")
+        st.latex(r"""
 \tilde C(K) = C_{\text{clean}}(K)\, e^{rT}
 \approx
 \mathbb{E}_Q\big[(S_T - K)^+\big],
 """)
-    st.markdown(r"and we apply the Breeden–Litzenberger formula:")
-    st.latex(r"f_Q(K) = \frac{\partial^2 \tilde C(K)}{\partial K^2}.")
-    st.markdown(r"Numerically, we interpolate, force $f_Q(K) \ge 0$ and normalize:")
-    st.latex(r"\int f_Q(K)\, dK = 1,")
-    st.markdown(r"also adjusting the first moment to match the theoretical forward:")
-    st.latex(r"\mathbb{E}_Q[S_T] = \int K\, f_Q(K)\, dK \approx S_0 e^{(r - q)T}.")
-    st.markdown(r"On each historical date $t$ we model intraday uncertainty as a Gaussian centered at the close $S_t$:")
-    st.latex(r"""
+        st.markdown(r"and we apply the Breeden–Litzenberger formula:")
+        st.latex(r"f_Q(K) = \frac{\partial^2 \tilde C(K)}{\partial K^2}.")
+        st.markdown(r"Numerically, we interpolate, force $f_Q(K) \ge 0$ and normalize:")
+        st.latex(r"\int f_Q(K)\, dK = 1,")
+        st.markdown(r"also adjusting the first moment to match the theoretical forward:")
+        st.latex(r"\mathbb{E}_Q[S_T] = \int K\, f_Q(K)\, dK \approx S_0 e^{(r - q)T}.")
+        st.markdown(r"On each historical date $t$ we model intraday uncertainty as a Gaussian centered at the close $S_t$:")
+        st.latex(r"""
 p_{\text{hist}}(s \mid t)
 \propto
 \exp\left(
@@ -780,33 +897,33 @@ p_{\text{hist}}(s \mid t)
 \frac{(s - S_t)^2}{(\sigma_{\text{hist}} S_t)^2}
 \right),
 """)
-    st.markdown(r"with fixed $\sigma_{\text{hist}}$ relative to the price. The quantile $q_\alpha(t)$ satisfies:")
-    st.latex(r"\int_{-\infty}^{q_\alpha(t)} p_t(s)\, ds = \alpha,")
-    st.markdown(r"and from these we obtain the 68% and 95% confidence bands that define the probability cone shown in the chart.")
+        st.markdown(r"with fixed $\sigma_{\text{hist}}$ relative to the price. The quantile $q_\alpha(t)$ satisfies:")
+        st.latex(r"\int_{-\infty}^{q_\alpha(t)} p_t(s)\, ds = \alpha,")
+        st.markdown(r"and from these we obtain the 68% and 95% confidence bands that define the probability cone shown in the chart.")
 
 
 # ─────────────────────────────────────────────
-# TAB: EMPRESA
+# TAB: COMPANY
 # ─────────────────────────────────────────────
 def render_empresa(ticker: str):
-    st.subheader(f"🏢 Perfil de Empresa — {ticker}")
+    st.subheader(f"🏢 Company Profile — {ticker}")
 
     if not FMP_API_KEY:
-        st.error("FMP_API_KEY no configurada.")
+        st.error("FMP_API_KEY is not set.")
         return
 
-    with st.spinner(f"Cargando perfil de {ticker}..."):
+    with st.spinner(f"Loading profile for {ticker}..."):
         profile = cached_company_profile(ticker, FMP_API_KEY)
 
     if profile is None:
-        st.error(f"No se pudo obtener perfil para **{ticker}**. Verifica el ticker o la conexión a FMP.")
+        st.error(f"Could not fetch profile for **{ticker}**. Check the ticker or FMP connectivity.")
         return
 
     # Mostrar logo si disponible
     logo = getattr(profile, "logo_url", None) or getattr(profile, "image_url", None)
     name = getattr(profile, "name", None) or ticker
-    sector = getattr(profile, "sector", None) or "N/D"
-    industry = getattr(profile, "industry", None) or "N/D"
+    sector = getattr(profile, "sector", None) or "N/A"
+    industry = getattr(profile, "industry", None) or "N/A"
     website = getattr(profile, "website", None) or ""
     description_en = getattr(profile, "description_en", None) or ""
 
@@ -819,7 +936,7 @@ def render_empresa(ticker: str):
                 pass
     with col_info:
         st.markdown(f"### {name} (`{ticker}`)")
-        st.caption(f"**Sector:** {sector} · **Industria:** {industry}")
+        st.caption(f"**Sector:** {sector} · **Industry:** {industry}")
         if website:
             st.caption(f"[{website}]({website})")
 
@@ -834,16 +951,16 @@ def render_empresa(ticker: str):
 
     st.divider()
 
-    # Descripción en español via Claude (streaming)
-    st.markdown("#### Descripción del negocio")
+    # Business description (LLM streaming summary)
+    st.markdown("#### Business Description")
 
     if not description_en:
-        st.info("No hay descripción disponible para este ticker en FMP.")
+        st.info("No description available for this ticker on FMP.")
         return
 
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not anthropic_key:
-        st.warning("⚠️ ANTHROPIC_API_KEY no configurada — mostrando descripción en inglés.")
+        st.warning("⚠️ ANTHROPIC_API_KEY not set — showing raw FMP description.")
         st.markdown(description_en[:800] + ("..." if len(description_en) > 800 else ""))
         return
 
@@ -861,25 +978,25 @@ def render_empresa(ticker: str):
             desc_placeholder.markdown(buffer + "▌")
         desc_placeholder.markdown(buffer)
     except Exception as e:
-        st.warning(f"Error en análisis Claude: {e}")
+        st.warning(f"Claude analysis error: {e}")
         st.markdown(description_en[:800])
 
 
 # ─────────────────────────────────────────────
-# TAB: VALUACIÓN
+# TAB: VALUATION
 # ─────────────────────────────────────────────
 def render_valuacion(ticker: str):
-    st.subheader(f"💰 Valuación por Múltiplos — {ticker}")
+    st.subheader(f"💰 Valuation by Multiples — {ticker}")
 
     if not FMP_API_KEY:
-        st.error("FMP_API_KEY no configurada.")
+        st.error("FMP_API_KEY is not set.")
         return
 
-    with st.spinner(f"Cargando métricas de {ticker}..."):
+    with st.spinner(f"Loading metrics for {ticker}..."):
         payload = cached_key_metrics(ticker, FMP_API_KEY)
 
     if payload is None:
-        st.error(f"No se pudieron obtener métricas para **{ticker}**.")
+        st.error(f"Could not fetch metrics for **{ticker}**.")
         return
 
     group_a = payload.groups.get("A. Valoración y múltiplos", {})
@@ -887,7 +1004,7 @@ def render_valuacion(ticker: str):
 
     def fmt_big(v):
         if v is None:
-            return "N/D"
+            return "N/A"
         try:
             x = float(v)
             if abs(x) >= 1e12:
@@ -902,7 +1019,7 @@ def render_valuacion(ticker: str):
 
     def fmt_ratio(v):
         if v is None:
-            return "N/D"
+            return "N/A"
         try:
             return f"{float(v):,.2f}x"
         except Exception:
@@ -910,7 +1027,7 @@ def render_valuacion(ticker: str):
 
     def fmt_pct(v):
         if v is None:
-            return "N/D"
+            return "N/A"
         try:
             x = float(v)
             x_scaled = x * 100 if abs(x) <= 1.5 else x
@@ -918,7 +1035,7 @@ def render_valuacion(ticker: str):
         except Exception:
             return str(v)
 
-    st.markdown("##### Múltiplos clave (TTM)")
+    st.markdown("##### Key Multiples (TTM)")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.metric("Market Cap", fmt_big(group_a.get("marketCap")))
@@ -931,16 +1048,16 @@ def render_valuacion(ticker: str):
 
     c5, c6, c7, c8 = st.columns(4)
     with c5:
-        st.metric("EV/Ventas", fmt_ratio(group_a.get("evToSalesTTM")))
+        st.metric("EV/Sales", fmt_ratio(group_a.get("evToSalesTTM")))
     with c6:
         st.metric("EV/FCF", fmt_ratio(group_a.get("evToFreeCashFlowTTM")))
     with c7:
-        st.metric("Núm. Graham", fmt_big(group_a.get("grahamNumberTTM")))
+        st.metric("Graham Number", fmt_big(group_a.get("grahamNumberTTM")))
     with c8:
         st.metric("Graham Net-Net", fmt_big(group_a.get("grahamNetNetTTM")))
 
-    # Rentabilidad
-    st.markdown("##### Rentabilidad y retornos (TTM)")
+    # Profitability & returns
+    st.markdown("##### Profitability & Returns (TTM)")
     ret_cols = st.columns(4)
     ret_keys = [
         ("ROA", "returnOnAssetsTTM"),
@@ -954,11 +1071,11 @@ def render_valuacion(ticker: str):
 
     st.divider()
 
-    # Análisis Claude streaming (webhook test)
-    st.markdown("#### Dictamen de Valuación Hecho con IA")
+    # AI-generated valuation verdict (Claude streaming)
+    st.markdown("#### AI Valuation Verdict")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not anthropic_key:
-        st.warning("⚠️ ANTHROPIC_API_KEY no configurada — análisis Claude no disponible.")
+        st.warning("⚠️ ANTHROPIC_API_KEY not set — Claude analysis unavailable.")
         return
 
     try:
@@ -974,30 +1091,30 @@ def render_valuacion(ticker: str):
             placeholder.markdown(buffer + "▌")
         placeholder.markdown(buffer)
     except Exception as e:
-        st.warning(f"Error en análisis Claude: {e}")
+        st.warning(f"Claude analysis error: {e}")
 
 
 # ─────────────────────────────────────────────
-# TAB: FINANCIEROS
+# TAB: FINANCIALS
 # ─────────────────────────────────────────────
 def render_financieros(ticker: str):
-    st.subheader(f"📈 Estado de Resultados — {ticker}")
+    st.subheader(f"📈 Income Statement — {ticker}")
 
     if not FMP_API_KEY:
-        st.error("FMP_API_KEY no configurada.")
+        st.error("FMP_API_KEY is not set.")
         return
 
     col_period, col_limit = st.columns(2)
     with col_period:
-        period = st.selectbox("Período", ["quarter", "annual"], key="fin_period")
+        period = st.selectbox("Period", ["quarter", "annual"], key="fin_period")
     with col_limit:
-        limit = st.slider("Períodos a mostrar", 4, 20, 12, key="fin_limit")
+        limit = st.slider("Periods to display", 4, 20, 12, key="fin_limit")
 
-    with st.spinner(f"Cargando estados financieros de {ticker}..."):
+    with st.spinner(f"Loading income statement for {ticker}..."):
         plot_data = cached_income_statement(ticker, FMP_API_KEY, period=period, limit=limit)
 
     if plot_data is None or plot_data.df.empty:
-        st.error(f"No se pudieron obtener estados financieros para **{ticker}**.")
+        st.error(f"Could not fetch income statement for **{ticker}**.")
         return
 
     df = plot_data.df.copy()
@@ -1040,7 +1157,7 @@ def render_financieros(ticker: str):
         fig.update_layout(
             barmode="group",
             title=f"{ticker} — Income Statement ({label})",
-            xaxis_title="Período",
+            xaxis_title="Period",
             yaxis_title=label,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
             height=420,
@@ -1048,7 +1165,7 @@ def render_financieros(ticker: str):
         )
         st.plotly_chart(fig, use_container_width=True)
     except ImportError:
-        st.warning("plotly no disponible — mostrando tabla.")
+        st.warning("plotly unavailable — showing table instead.")
         display_cols = ["date"] + [m for m in plot_data.available_metrics if m in df.columns]
         df_display = df[display_cols].copy()
         for m in plot_data.available_metrics:
@@ -1058,19 +1175,19 @@ def render_financieros(ticker: str):
 
     st.divider()
 
-    # Análisis de crecimiento Claude
-    st.markdown("#### Análisis de Crecimiento (Claude)")
+    # AI-generated growth analysis (Claude)
+    st.markdown("#### Growth Analysis (Claude)")
 
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not anthropic_key:
-        st.warning("⚠️ ANTHROPIC_API_KEY no configurada.")
+        st.warning("⚠️ ANTHROPIC_API_KEY not set.")
         return
 
-    with st.spinner("Cargando datos de crecimiento..."):
+    with st.spinner("Loading growth data..."):
         growth_payload = cached_income_growth(ticker, FMP_API_KEY)
 
     if growth_payload is None:
-        st.warning("No se pudieron obtener datos de crecimiento.")
+        st.warning("Could not fetch growth data.")
         return
 
     try:
@@ -1087,37 +1204,37 @@ def render_financieros(ticker: str):
             placeholder.markdown(buffer + "▌")
         placeholder.markdown(buffer)
     except Exception as e:
-        st.warning(f"Error en análisis Claude: {e}")
+        st.warning(f"Claude analysis error: {e}")
 
 
 # ─────────────────────────────────────────────
-# TAB: SECTORIAL
+# TAB: SECTOR
 # ─────────────────────────────────────────────
 def render_sectorial(ticker: str):
-    st.subheader(f"🌐 Análisis Sectorial — {ticker}")
+    st.subheader(f"🌐 Sector Analysis — {ticker}")
 
     if not FMP_API_KEY:
-        st.error("FMP_API_KEY no configurada.")
+        st.error("FMP_API_KEY is not set.")
         return
 
-    peers_limit = st.slider("Número de peers", 10, 40, 20, key="sec_peers")
+    peers_limit = st.slider("Peer count", 10, 40, 20, key="sec_peers")
 
-    with st.spinner(f"Buscando peers sectoriales para {ticker} (puede tardar ~30s)..."):
+    with st.spinner(f"Building peer set for {ticker} (may take ~30s)..."):
         panel = cached_sector_peers(ticker, FMP_API_KEY, peers_limit=peers_limit)
 
     if panel is None:
-        st.error(f"No se pudo construir el panel sectorial para **{ticker}**.")
+        st.error(f"Could not build sector panel for **{ticker}**.")
         return
 
-    sector = panel.sector or "N/D"
-    industry = panel.industry or "N/D"
+    sector = panel.sector or "N/A"
+    industry = panel.industry or "N/A"
     company_name = panel.company_name or ticker
 
-    st.caption(f"**{company_name}** · Sector: {sector} · Industria: {industry} · Peers evaluados: {len(panel.peers_table)}")
+    st.caption(f"**{company_name}** · Sector: {sector} · Industry: {industry} · Peers analyzed: {len(panel.peers_table)}")
 
     # Value-Quality ranking
     if not panel.value_quality_rank.empty:
-        st.markdown("##### 🏆 Ranking Value-Quality (score mayor = mejor)")
+        st.markdown("##### 🏆 Value-Quality Ranking (higher score = better)")
         cols_vq = ["symbol", "companyName", "evToEBITDATTM", "roic", "score"]
         vq_display = panel.value_quality_rank[[c for c in cols_vq if c in panel.value_quality_rank.columns]].head(15).copy()
         for num_col in ["evToEBITDATTM", "roic", "score"]:
@@ -1125,11 +1242,11 @@ def render_sectorial(ticker: str):
                 vq_display[num_col] = vq_display[num_col].round(3)
         st.dataframe(vq_display, use_container_width=True, hide_index=True)
     else:
-        st.info("No hay datos suficientes para construir ranking Value-Quality.")
+        st.info("Insufficient data to build Value-Quality ranking.")
 
     # ROIC ranking
     if not panel.roic_rank.empty:
-        st.markdown("##### 📊 Ranking ROIC")
+        st.markdown("##### 📊 ROIC Ranking")
         cols_roic = ["symbol", "companyName", "returnOnInvestedCapitalTTM", "evToEBITDATTM"]
         roic_display = panel.roic_rank[[c for c in cols_roic if c in panel.roic_rank.columns]].head(15).copy()
         for num_col in ["returnOnInvestedCapitalTTM", "evToEBITDATTM"]:
@@ -1137,13 +1254,13 @@ def render_sectorial(ticker: str):
                 roic_display[num_col] = roic_display[num_col].round(3)
         st.dataframe(roic_display, use_container_width=True, hide_index=True)
 
-    # Stats ROIC
+    # ROIC stats
     if panel.roic_stats:
-        st.markdown("##### Estadísticos ROIC del set")
+        st.markdown("##### Peer ROIC Statistics")
         sc1, sc2, sc3, sc4 = st.columns(4)
         stats = panel.roic_stats
         with sc1:
-            st.metric("Mediana ROIC", f"{stats.get('roic_median', 0)*100:.1f}%")
+            st.metric("Median ROIC", f"{stats.get('roic_median', 0)*100:.1f}%")
         with sc2:
             st.metric("P75 ROIC", f"{stats.get('roic_p75', 0)*100:.1f}%")
         with sc3:
@@ -1153,11 +1270,11 @@ def render_sectorial(ticker: str):
 
     st.divider()
 
-    # Dictamen sectorial Claude
-    st.markdown("#### Dictamen Sectorial (Claude)")
+    # Sector verdict (Claude streaming)
+    st.markdown("#### Sector Verdict (Claude)")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not anthropic_key:
-        st.warning("⚠️ ANTHROPIC_API_KEY no configurada — dictamen Claude no disponible.")
+        st.warning("⚠️ ANTHROPIC_API_KEY not set — Claude verdict unavailable.")
         return
 
     try:
@@ -1220,19 +1337,51 @@ def main():
             "Ticker",
             value="SPY",
             key="global_ticker",
-            help="Ticker para todos los tabs (Densidades, Empresa, Valuación, etc.)",
+            help="Ticker applied across all tabs (Densities, Company, Valuation, etc.)",
         ).upper().strip()
+
+        # Company name + short profile (FMP). Cached → only one call per ticker.
+        # Renders silently if FMP key or profile is unavailable, so the sidebar
+        # never breaks for unsupported tickers (e.g. some indices/futures).
+        if FMP_API_KEY and global_ticker:
+            try:
+                _sidebar_profile = cached_company_profile(global_ticker, FMP_API_KEY)
+            except Exception:
+                _sidebar_profile = None
+            if _sidebar_profile is not None:
+                _name = getattr(_sidebar_profile, "name", None) or global_ticker
+                _sector = getattr(_sidebar_profile, "sector", None) or ""
+                _industry = getattr(_sidebar_profile, "industry", None) or ""
+                _desc = getattr(_sidebar_profile, "description_en", None) or ""
+
+                st.markdown(f"**{_name}**")
+                if _sector or _industry:
+                    sector_line = " · ".join([x for x in [_sector, _industry] if x])
+                    st.caption(sector_line)
+                if _desc:
+                    # Trim to ~240 chars and end at last full sentence/word.
+                    _MAX = 240
+                    if len(_desc) > _MAX:
+                        _cut = _desc[:_MAX]
+                        # backtrack to last sentence end or whitespace for clean break
+                        _stop = max(_cut.rfind(". "), _cut.rfind("? "), _cut.rfind("! "))
+                        if _stop < 120:
+                            _stop = _cut.rfind(" ")
+                        _desc_short = (_cut[:_stop + 1] if _stop > 0 else _cut) + "…"
+                    else:
+                        _desc_short = _desc
+                    st.caption(_desc_short)
 
     # Tabs
     tab_dens, tab_emp, tab_val, tab_fin, tab_sec = st.tabs(
-        ["📊 Densidades", "🏢 Empresa", "💰 Valuación", "📈 Financieros", "🌐 Sectorial"]
+        ["📊 Densities", "🏢 Company", "💰 Valuation", "📈 Financials", "🌐 Sector"]
     )
 
     with tab_dens:
         try:
             render_densidades(global_ticker)
         except Exception as e:
-            st.error(f"Error en tab Densidades: {e}")
+            st.error(f"Error in Densities tab: {e}")
             import traceback
             st.code(traceback.format_exc())
 
@@ -1240,25 +1389,25 @@ def main():
         try:
             render_empresa(global_ticker)
         except Exception as e:
-            st.error(f"Error en tab Empresa: {e}")
+            st.error(f"Error in Company tab: {e}")
 
     with tab_val:
         try:
             render_valuacion(global_ticker)
         except Exception as e:
-            st.error(f"Error en tab Valuación: {e}")
+            st.error(f"Error in Valuation tab: {e}")
 
     with tab_fin:
         try:
             render_financieros(global_ticker)
         except Exception as e:
-            st.error(f"Error en tab Financieros: {e}")
+            st.error(f"Error in Financials tab: {e}")
 
     with tab_sec:
         try:
             render_sectorial(global_ticker)
         except Exception as e:
-            st.error(f"Error en tab Sectorial: {e}")
+            st.error(f"Error in Sector tab: {e}")
 
     # Pie del sidebar (al final, debajo de los controles que agregan los tabs).
     with st.sidebar:

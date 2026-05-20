@@ -467,7 +467,7 @@ def plot_main_figure(
         xaxis_title="Date",
         yaxis_title="Price / Strike",
         title=dict(
-            text="Densidad de Probabilidad Implícita a Partir de Precios de Opciones",
+            text="Risk-Neutral Density from Option Prices",
             font=dict(family="Inter, -apple-system, sans-serif", size=16, color="#dddddd"),
         ),
         hovermode="x unified",

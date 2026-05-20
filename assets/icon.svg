@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ProbEdge — emblematic icon (v4: candle + lightning rays + density fills)
+  ========================================================================
+  Concept synthesis:
+    - Density mass shown as soft gradient fills (cyan upside, coral downside)
+      bounded by smooth outer envelopes. Communicates "probability mass" at
+      a glance, like the real chart heatmap.
+    - Inside the density, stochastic "lightning rays" zigzag with smooth
+      bezier serpentines — not angular polylines, not perfect curves.
+      Each ray = one possible price path under the risk-neutral measure.
+    - Green bullish candle on the left = spot price (last bar of the chain).
+    - Asymmetric: 3 cyan upside rays (denser, more extreme reach) vs 2 coral
+      downside rays (sparser, less extreme reach). The fill envelopes also
+      reach further up than down — positive-skew RND.
+
+  Palette: cyan #00ffc8 and coral #ff5a82, pulled from modules/plots.py.
+
+  ViewBox 0 0 64 64 with safe padding. Reads clean at 32×32 favicon and
+  scales up indefinitely for hero usage.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <!-- Upside density gradient: faint at upper extreme, dense near median+apex (bottom-left).
+         Direction top-right → bottom-left mirrors how RND mass concentrates in time too. -->
+    <linearGradient id="upDensity" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#00ffc8" stop-opacity="0.05"/>
+      <stop offset="65%" stop-color="#00ffc8" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#00ffc8" stop-opacity="0.38"/>
+    </linearGradient>
+    <!-- Downside density gradient: dense near median+apex (top-left), faint at lower extreme. -->
+    <linearGradient id="downDensity" x1="1" y1="1" x2="0" y2="0">
+      <stop offset="0%"  stop-color="#ff5a82" stop-opacity="0.04"/>
+      <stop offset="65%" stop-color="#ff5a82" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#ff5a82" stop-opacity="0.30"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ════════════════ Density mass fills (smooth envelopes) ════════════════ -->
+  <!-- Upside fill: smooth 95%↑ outer boundary from apex (14,32) up to (56,8),
+       closed back along median y=32. Asymmetric reach: upside extends to y=8. -->
+  <path
+    d="M 14 32
+       C 22 30, 36 18, 56 8
+       L 56 32
+       L 14 32 Z"
+    fill="url(#upDensity)"
+  />
+  <!-- Downside fill: smooth 95%↓ outer boundary, closed along median.
+       Asymmetric reach: downside only extends to y=50 (less than upside's y=8 range). -->
+  <path
+    d="M 14 32
+       C 22 34, 36 44, 56 50
+       L 56 32
+       L 14 32 Z"
+    fill="url(#downDensity)"
+  />
+
+  <!-- ════════════════ Spot candle (left) ════════════════ -->
+  <!-- Bullish green candle: full wick + filled body, in cyan. -->
+  <line x1="11" y1="22" x2="11" y2="42"
+        stroke="#00ffc8" stroke-width="1.1" stroke-linecap="round" stroke-opacity="0.95"/>
+  <rect x="8" y="27" width="6" height="10"
+        fill="#00ffc8" fill-opacity="0.9" stroke="#00ffc8" stroke-width="0.6"/>
+
+  <!-- ════════════════ Stochastic lightning rays ════════════════ -->
+  <!-- Each ray uses bezier cubics with intentionally non-monotonic control
+       points so the curve overshoots and undershoots its direction of
+       travel — visible serpentine motion, not a clean fan. The cubic
+       segments give smoothness; the alternating control-point placements
+       give the lightning-bolt unpredictability. -->
+
+  <!-- Upside extreme (95%↑) — three serpentine segments climbing from spot to y=8 -->
+  <path
+    d="M 14 32
+       C 19 24, 24 32, 28 23
+       C 32 17, 38 26, 42 19
+       C 48 13, 50 17, 56 8"
+    stroke="#00ffc8" stroke-width="1.0" stroke-opacity="0.95"
+    stroke-linecap="round" stroke-linejoin="round"
+  />
+
+  <!-- Upside mid (68%↑) — moderate serpentine, terminating at y=18 -->
+  <path
+    d="M 14 32
+       C 21 28, 26 34, 31 26
+       C 36 22, 41 28, 46 22
+       C 51 19, 53 24, 56 18"
+    stroke="#00ffc8" stroke-width="0.85" stroke-opacity="0.85"
+    stroke-linecap="round" stroke-linejoin="round"
+  />
+
+  <!-- Median lightning bolt — white serpentine through the center of the
+       density. Drawn slightly thicker than the inner rays because this is
+       the modal path: where the volatility-implied probability mass
+       concentrates the most. Same bezier-overshoot language as the other
+       rays so it visually belongs to the same family. -->
+  <path
+    d="M 14 32
+       C 19 29, 24 35, 28 30
+       C 32 26, 38 35, 42 30
+       C 48 27, 51 35, 56 32"
+    stroke="#f0fbff" stroke-width="0.95" stroke-opacity="0.92"
+    stroke-linecap="round" stroke-linejoin="round"
+  />
+
+  <!-- Downside mid (68%↓) — moderate serpentine, terminating at y=42.
+       Brighter coral than the chart fill (#ff4070 vs #ff5a82) and matched
+       opacity to the cyan ray so the lightning-bolt feel is symmetric. -->
+  <path
+    d="M 14 32
+       C 21 36, 26 30, 31 38
+       C 36 42, 41 36, 46 42
+       C 51 45, 53 40, 56 42"
+    stroke="#ff4070" stroke-width="0.9" stroke-opacity="0.92"
+    stroke-linecap="round" stroke-linejoin="round"
+  />
+
+  <!-- Downside extreme (95%↓) — three serpentine segments dropping from spot
+       to y=50. Same brighter coral, fully opaque, slightly thicker stroke
+       so it reads with equal weight to the cyan extreme ray at favicon size. -->
+  <path
+    d="M 14 32
+       C 19 39, 24 33, 28 41
+       C 32 47, 38 39, 42 46
+       C 48 51, 50 48, 56 50"
+    stroke="#ff4070" stroke-width="1.1" stroke-opacity="1"
+    stroke-linecap="round" stroke-linejoin="round"
+  />
+
+  <!-- ════════════════ Terminal density anchors ════════════════ -->
+  <!-- Small luminous dots at expiration showing where the rays converge.
+       2 cyan + 1 white + 2 coral = matched count per side, asymmetry comes
+       from the curve geometry, not from ray count. Coral dots use the
+       brighter #ff4070 to match the rays. -->
+  <circle cx="56" cy="8"  r="1.0" fill="#00ffc8" opacity="0.95"/>
+  <circle cx="56" cy="18" r="0.8" fill="#00ffc8" opacity="0.85"/>
+  <circle cx="56" cy="32" r="1.0" fill="#f0fbff" opacity="0.95"/>
+  <circle cx="56" cy="42" r="0.8" fill="#ff4070" opacity="0.92"/>
+  <circle cx="56" cy="50" r="1.0" fill="#ff4070" opacity="1"/>
+</svg>
