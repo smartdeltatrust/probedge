@@ -313,13 +313,11 @@ async def _fetch_options_async(
             "token": dx_token,
         }))
 
-        # 3. CHANNEL_REQUEST
-        await ws.send(json.dumps({
-            "type": "CHANNEL_REQUEST",
-            "channel": CHANNEL_ID,
-            "service": "FEED",
-            "parameters": {"contract": "AUTO"},
-        }))
+        # NOTE: CHANNEL_REQUEST se envía DESPUÉS de recibir AUTH_STATE=AUTHORIZED.
+        # El servidor de dxFeed rechaza CHANNEL_REQUEST si llega antes de que la
+        # autenticación se complete (BAD_ACTION: AUTH step missing), y entonces
+        # no se abre el canal y no llegan datos.
+        channel_requested = False
 
         deadline = time.monotonic() + timeout
         event_fields: dict = {}
@@ -346,6 +344,14 @@ async def _fetch_options_async(
             if mtype == "AUTH_STATE":
                 if msg.get("state") == "AUTHORIZED":
                     logger.debug("dxFeed auth OK (options)")
+                    if not channel_requested:
+                        await ws.send(json.dumps({
+                            "type": "CHANNEL_REQUEST",
+                            "channel": CHANNEL_ID,
+                            "service": "FEED",
+                            "parameters": {"contract": "AUTO"},
+                        }))
+                        channel_requested = True
                 continue
 
             if mtype == "CHANNEL_OPENED" and channel == CHANNEL_ID:

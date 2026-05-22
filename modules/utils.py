@@ -299,7 +299,9 @@ def build_clean_calls_from_chain(
         C_clean = float(np.mean(candidates))
         rows.append({"strike": K, "call_price_clean": C_clean})
 
-    clean_calls = pd.DataFrame(rows)
+    clean_calls = pd.DataFrame(rows, columns=["strike", "call_price_clean"])
+    if clean_calls.empty:
+        return clean_calls
     clean_calls = clean_calls.sort_values("strike").reset_index(drop=True)
     return clean_calls
 
